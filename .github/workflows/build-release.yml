@@ -1,6 +1,9 @@
 name: Build and Release APK
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -29,8 +32,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: Arabic TTS v1.0.0
+          tag_name: ${{ github.ref_name }}
+          name: Arabic TTS ${{ github.ref_name }}
           body: |
             ## Arabic TTS - Bilingual Text-to-Speech App
 
