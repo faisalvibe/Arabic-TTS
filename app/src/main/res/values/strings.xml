@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Arabic TTS</string>
+    <string name="subtitle">Bilingual Text-to-Speech\nتحويل النص إلى كلام</string>
+    <string name="download_prompt">Voice models need to be downloaded (~120 MB)\nيجب تحميل نماذج الصوت</string>
+    <string name="download_models">Download Models\nتحميل النماذج</string>
+    <string name="input_hint">Enter text in Arabic or English\nأدخل النص بالعربية أو الإنجليزية</string>
+    <string name="speak">Speak / تحدث</string>
+    <string name="stop">Stop</string>
+    <string name="speed">Speed:</string>
+    <string name="try_samples">Try a sample:</string>
+</resources>
