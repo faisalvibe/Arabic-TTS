@@ -230,7 +230,6 @@ class DebugActivity : AppCompatActivity() {
             this@DebugActivity.filesDir.absolutePath.replace("/:debug", ""),
             "native_crash_log.txt"
         )
-        // Also check alternative paths
         val crashPaths = listOf(
             crashFile,
             File("/data/data/com.arabictts.app/files/native_crash_log.txt"),
@@ -245,7 +244,41 @@ class DebugActivity : AppCompatActivity() {
             }
         }
         if (!foundCrash) {
-            appendLine("No previous crash data found")
+            appendLine("No previous crash data found (file)")
+        }
+
+        // Capture logcat from crashed main process - sherpa-onnx logs errors before exit(-1)
+        appendLine()
+        appendLine("--- Recent Logcat (errors/warnings) ---")
+        try {
+            val process = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "150", "*:W"))
+            val logOutput = process.inputStream.bufferedReader().readText()
+            process.waitFor()
+            // Filter for relevant entries
+            val relevantLines = logOutput.lines().filter { line ->
+                line.contains("sherpa", ignoreCase = true) ||
+                line.contains("onnx", ignoreCase = true) ||
+                line.contains("tts", ignoreCase = true) ||
+                line.contains("FATAL", ignoreCase = true) ||
+                line.contains("signal", ignoreCase = true) ||
+                line.contains("exit", ignoreCase = true) ||
+                line.contains("crash", ignoreCase = true) ||
+                line.contains("Arabic", ignoreCase = true) ||
+                line.contains("piper", ignoreCase = true) ||
+                line.contains("espeak", ignoreCase = true) ||
+                line.contains("native", ignoreCase = true) ||
+                line.contains("Duplicated", ignoreCase = true)
+            }
+            if (relevantLines.isNotEmpty()) {
+                relevantLines.takeLast(50).forEach { appendLine(it) }
+            } else {
+                appendLine("No relevant log entries found")
+                // Show last 30 warning/error lines as fallback
+                val lastLines = logOutput.lines().takeLast(30)
+                lastLines.forEach { appendLine(it) }
+            }
+        } catch (e: Exception) {
+            appendLine("Could not read logcat: ${e.message}")
         }
 
         appendLine()
