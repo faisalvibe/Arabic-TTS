@@ -10,6 +10,7 @@ import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * Wraps Sherpa-ONNX TTS for bilingual Arabic/English synthesis.
@@ -25,6 +26,15 @@ class TTSEngine {
     private var englishTts: OfflineTts? = null
     private var audioTrack: AudioTrack? = null
     private var isPlaying = false
+    var breadcrumbFile: File? = null
+
+    private fun breadcrumb(msg: String) {
+        try {
+            val ts = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date())
+            breadcrumbFile?.appendText("[$ts] $msg\n")
+            Log.i(TAG, "BREADCRUMB: $msg")
+        } catch (_: Exception) {}
+    }
 
     data class InitResult(val success: Boolean, val error: String? = null)
 
@@ -124,16 +134,21 @@ class TTSEngine {
             }
 
             try {
+                breadcrumb("generate() calling for ${segment.language}: \"${segment.text.take(50)}\"")
                 val audio = tts.generate(
                     text = segment.text,
                     sid = 0,
                     speed = speed
                 )
+                breadcrumb("generate() returned: ${audio.samples.size} samples, rate=${audio.sampleRate}")
 
                 if (!isPlaying) break
 
+                breadcrumb("playAudio() starting")
                 playAudio(audio.samples, audio.sampleRate)
-            } catch (e: Exception) {
+                breadcrumb("playAudio() completed")
+            } catch (e: Throwable) {
+                breadcrumb("EXCEPTION: ${e.javaClass.name}: ${e.message}")
                 Log.e(TAG, "TTS generation failed for segment: ${segment.text}", e)
             }
         }
@@ -232,4 +247,16 @@ class TTSEngine {
 
     fun isArabicReady(): Boolean = arabicTts != null
     fun isEnglishReady(): Boolean = englishTts != null
+
+    /**
+     * Test generation with English TTS to verify native inference works.
+     * Returns (sampleCount, sampleRate) or null on failure.
+     */
+    fun testGenerate(text: String): Pair<Int, Int>? {
+        val tts = englishTts ?: arabicTts ?: return null
+        breadcrumb("testGenerate() calling with: \"$text\"")
+        val audio = tts.generate(text = text, sid = 0, speed = 1.0f)
+        breadcrumb("testGenerate() returned: ${audio.samples.size} samples, rate=${audio.sampleRate}")
+        return Pair(audio.samples.size, audio.sampleRate)
+    }
 }

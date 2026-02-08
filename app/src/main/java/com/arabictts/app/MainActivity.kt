@@ -132,6 +132,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initTTSEngines() {
+        // Set up breadcrumb file for crash diagnostics
+        val breadcrumbFile = java.io.File(filesDir, "tts_breadcrumb.txt")
+        breadcrumbFile.writeText("=== TTS Breadcrumbs ===\n")
+        ttsEngine.breadcrumbFile = breadcrumbFile
+
         lifecycleScope.launch(Dispatchers.IO) {
             val arModel = modelManager.getArabicModelFiles()
             val enModel = modelManager.getEnglishModelFiles()
@@ -147,6 +152,17 @@ class MainActivity : AppCompatActivity() {
 
             val arResult = ttsEngine.initArabic(arModel.modelPath, arModel.tokensPath, espeakData)
             val enResult = ttsEngine.initEnglish(enModel.modelPath, enModel.tokensPath, espeakData)
+
+            if (arResult.success && enResult.success) {
+                // Test generate with simple text to verify native inference works
+                try {
+                    breadcrumbFile.appendText("Testing generate with 'test'...\n")
+                    val testAudio = ttsEngine.testGenerate("test")
+                    breadcrumbFile.appendText("Test generate OK: ${testAudio?.first ?: 0} samples, rate=${testAudio?.second ?: 0}\n")
+                } catch (e: Throwable) {
+                    breadcrumbFile.appendText("Test generate FAILED: ${e.javaClass.name}: ${e.message}\n")
+                }
+            }
 
             withContext(Dispatchers.Main) {
                 if (arResult.success && enResult.success) {

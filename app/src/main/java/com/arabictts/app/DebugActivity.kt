@@ -252,6 +252,25 @@ class DebugActivity : AppCompatActivity() {
             appendLine("sherpa-onnx-jni: ERROR - ${e.message}")
         }
 
+        // Show TTS breadcrumbs (last generate() call trace)
+        appendLine()
+        appendLine("--- TTS Breadcrumbs ---")
+        val breadcrumbPaths = listOf(
+            File(this@DebugActivity.filesDir.absolutePath.replace("/:debug", ""), "tts_breadcrumb.txt"),
+            File("/data/user/0/com.arabictts.app/files/tts_breadcrumb.txt")
+        )
+        var foundBreadcrumb = false
+        for (bf in breadcrumbPaths) {
+            if (bf.exists()) {
+                appendLine(bf.readText().take(2000))
+                foundBreadcrumb = true
+                break
+            }
+        }
+        if (!foundBreadcrumb) {
+            appendLine("No breadcrumbs found (generate() not yet called)")
+        }
+
         // Show previous native crash info if available
         appendLine()
         appendLine("--- Previous Crash Info ---")
