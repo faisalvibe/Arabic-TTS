@@ -23,5 +23,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".CrashActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ArabicTTS"
+            android:process=":crash" />
+
     </application>
 </manifest>
