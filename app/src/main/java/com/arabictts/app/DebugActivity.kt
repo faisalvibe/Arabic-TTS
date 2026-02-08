@@ -161,7 +161,7 @@ class DebugActivity : AppCompatActivity() {
             appendLine("NOT FOUND")
         }
 
-        // Show tokens.txt content preview
+        // Show tokens.txt content preview (with hex dump for debugging format issues)
         appendLine()
         appendLine("--- tokens.txt Preview ---")
         for (name in listOf("ar_JO-kareem-low-tokens.txt", "en_US-amy-low-tokens.txt")) {
@@ -171,10 +171,15 @@ class DebugActivity : AppCompatActivity() {
                 appendLine("  Size: ${f.length()} bytes")
                 val lines = f.readLines()
                 appendLine("  Total lines: ${lines.size}")
-                appendLine("  First 5 lines:")
-                lines.take(5).forEach { line -> appendLine("    $line") }
+                appendLine("  First 8 lines (with hex):")
+                lines.take(8).forEachIndexed { idx, line ->
+                    val hex = line.toByteArray().joinToString(" ") { "%02X".format(it) }
+                    appendLine("    L$idx: [$line]  hex: $hex")
+                }
                 appendLine("  Last 3 lines:")
-                lines.takeLast(3).forEach { line -> appendLine("    $line") }
+                lines.takeLast(3).forEachIndexed { idx, line ->
+                    appendLine("    L${lines.size - 3 + idx}: [$line]")
+                }
             } else {
                 appendLine("  NOT FOUND")
             }
@@ -216,6 +221,31 @@ class DebugActivity : AppCompatActivity() {
             appendLine("sherpa-onnx-jni: FAILED - ${e.message}")
         } catch (e: Exception) {
             appendLine("sherpa-onnx-jni: ERROR - ${e.message}")
+        }
+
+        // Show previous native crash info if available
+        appendLine()
+        appendLine("--- Previous Crash Info ---")
+        val crashFile = File(
+            this@DebugActivity.filesDir.absolutePath.replace("/:debug", ""),
+            "native_crash_log.txt"
+        )
+        // Also check alternative paths
+        val crashPaths = listOf(
+            crashFile,
+            File("/data/data/com.arabictts.app/files/native_crash_log.txt"),
+            File("/data/user/0/com.arabictts.app/files/native_crash_log.txt")
+        )
+        var foundCrash = false
+        for (cf in crashPaths) {
+            if (cf.exists()) {
+                appendLine(cf.readText().take(4000))
+                foundCrash = true
+                break
+            }
+        }
+        if (!foundCrash) {
+            appendLine("No previous crash data found")
         }
 
         appendLine()

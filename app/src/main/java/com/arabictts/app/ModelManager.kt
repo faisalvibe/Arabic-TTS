@@ -72,6 +72,8 @@ class ModelManager(private val context: Context) {
     }
 
     fun areModelsReady(): Boolean {
+        // Always regenerate tokens.txt to fix any broken format from older versions
+        ensureTokenFiles()
         return getArabicModelFiles() != null &&
                 getEnglishModelFiles() != null &&
                 getEspeakDataDir() != null
@@ -194,41 +196,66 @@ class ModelManager(private val context: Context) {
     }
 
     /**
+     * Ensures tokens.txt files are correctly generated from the Piper JSON configs.
+     * Call this on every startup to repair tokens files from older versions that had
+     * a bug writing duplicate token entries (which causes sherpa-onnx to exit(-1)).
+     */
+    fun ensureTokenFiles() {
+        val arConfig = File(modelsDir, "ar_JO-kareem-low.onnx.json")
+        val arTokens = File(modelsDir, "ar_JO-kareem-low-tokens.txt")
+        if (arConfig.exists()) {
+            arTokens.delete()
+            generateTokensFile(arConfig, arTokens)
+        }
+
+        val enConfig = File(modelsDir, "en_US-amy-low.onnx.json")
+        val enTokens = File(modelsDir, "en_US-amy-low-tokens.txt")
+        if (enConfig.exists()) {
+            enTokens.delete()
+            generateTokensFile(enConfig, enTokens)
+        }
+    }
+
+    /**
      * Parses a Piper .onnx.json config and generates the tokens.txt that sherpa-onnx needs.
-     * The JSON has a "phoneme_id_map" like {"_": [0], "^": [1], ...}.
-     * tokens.txt needs lines like "_\n^\n..." where line number = token ID.
+     * The JSON has a "phoneme_id_map" like {"_": [0], "^": [1], " ": [3], ...}.
+     *
+     * IMPORTANT: Each phoneme must appear EXACTLY ONCE using only its first ID.
+     * Sherpa-onnx calls exit(-1) on duplicate token names.
+     * The space character token is handled by sherpa-onnx's Trim+EOF heuristic.
+     * Newline tokens must be skipped (would break line-based format).
      */
     private fun generateTokensFile(configJson: File, tokensFile: File) {
-        if (tokensFile.exists()) return
         if (!configJson.exists()) throw Exception("Config file not found: ${configJson.name}")
 
         try {
             val json = JSONObject(configJson.readText())
             val phonemeIdMap = json.getJSONObject("phoneme_id_map")
 
-            // Build id -> phoneme mapping
-            val idToPhoneme = mutableMapOf<Int, String>()
+            // Build phoneme -> first ID mapping (one entry per phoneme, matching sherpa-onnx convention)
+            val entries = mutableListOf<Pair<String, Int>>()
             val keys = phonemeIdMap.keys()
             while (keys.hasNext()) {
                 val phoneme = keys.next()
+                if (phoneme == "\n") continue  // Skip newline token (would break line-based format)
                 val ids = phonemeIdMap.getJSONArray(phoneme)
-                for (i in 0 until ids.length()) {
-                    idToPhoneme[ids.getInt(i)] = phoneme
-                }
+                val firstId = ids.getInt(0)
+                entries.add(phoneme to firstId)
             }
 
-            // Write tokens.txt: each line is the phoneme for that token ID
-            val maxId = idToPhoneme.keys.maxOrNull() ?: return
+            // Sort by ID for consistency
+            entries.sortBy { it.second }
+
+            // Write tokens.txt: each line is "<token> <id>"
             tokensFile.bufferedWriter().use { writer ->
-                for (id in 0..maxId) {
-                    val phoneme = idToPhoneme[id] ?: ""
+                for ((phoneme, id) in entries) {
                     writer.write(phoneme)
                     writer.write(" ")
                     writer.write(id.toString())
                     writer.newLine()
                 }
             }
-            Log.i(TAG, "Generated tokens file: ${tokensFile.name} with ${maxId + 1} tokens")
+            Log.i(TAG, "Generated tokens file: ${tokensFile.name} with ${entries.size} entries")
         } catch (e: Exception) {
             tokensFile.delete()
             throw Exception("Failed to generate tokens from ${configJson.name}: ${e.message}", e)
