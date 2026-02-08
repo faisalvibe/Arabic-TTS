@@ -29,5 +29,11 @@
             android:theme="@style/Theme.ArabicTTS"
             android:process=":crash" />
 
+        <activity
+            android:name=".DebugActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ArabicTTS"
+            android:process=":debug" />
+
     </application>
 </manifest>

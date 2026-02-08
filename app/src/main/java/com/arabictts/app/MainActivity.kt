@@ -1,5 +1,6 @@
 package com.arabictts.app
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
@@ -25,7 +26,16 @@ class MainActivity : AppCompatActivity() {
         modelManager = ModelManager(this)
 
         setupUI()
-        checkModels()
+
+        val skipDebug = intent.getBooleanExtra("skip_debug", false)
+        if (skipDebug && modelManager.areModelsReady()) {
+            // Coming back from DebugActivity - go straight to init
+            showReady()
+            binding.tvStatus.text = "Initializing TTS engines..."
+            initTTSEngines()
+        } else {
+            checkModels()
+        }
     }
 
     private fun setupUI() {
@@ -72,11 +82,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkModels() {
         if (modelManager.areModelsReady()) {
-            showReady()
-            initTTSEngines()
+            // Models exist - show debug screen first so user can copy info before init
+            launchDebugActivity()
         } else {
             showDownloadNeeded()
         }
+    }
+
+    private fun launchDebugActivity() {
+        val intent = Intent(this, DebugActivity::class.java)
+        startActivity(intent)
     }
 
     private fun downloadModels() {
@@ -98,8 +113,9 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 withContext(Dispatchers.Main) {
-                    binding.tvStatus.text = "Models downloaded! Initializing..."
-                    initTTSEngines()
+                    binding.tvStatus.text = "Download complete! Opening debug info..."
+                    // Show debug activity so user can see files before init
+                    launchDebugActivity()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
