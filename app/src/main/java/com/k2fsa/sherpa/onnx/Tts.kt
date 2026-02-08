@@ -15,32 +15,8 @@ data class OfflineTtsVitsModelConfig(
     var lengthScale: Float = 1.0f,
 )
 
-data class OfflineTtsMatchaModelConfig(
-    var acousticModel: String = "",
-    var vocoder: String = "",
-    var lexicon: String = "",
-    var tokens: String = "",
-    var dataDir: String = "",
-    var dictDir: String = "",
-    var noiseScale: Float = 1.0f,
-    var lengthScale: Float = 1.0f,
-)
-
-data class OfflineTtsKokoroModelConfig(
-    var model: String = "",
-    var voices: String = "",
-    var tokens: String = "",
-    var dataDir: String = "",
-    var lexicon: String = "",
-    var lang: String = "",
-    var dictDir: String = "",
-    var lengthScale: Float = 1.0f,
-)
-
 data class OfflineTtsModelConfig(
     var vits: OfflineTtsVitsModelConfig = OfflineTtsVitsModelConfig(),
-    var matcha: OfflineTtsMatchaModelConfig = OfflineTtsMatchaModelConfig(),
-    var kokoro: OfflineTtsKokoroModelConfig = OfflineTtsKokoroModelConfig(),
     var numThreads: Int = 1,
     var debug: Boolean = false,
     var provider: String = "cpu",
@@ -90,7 +66,10 @@ class OfflineTts(
         sid: Int = 0,
         speed: Float = 1.0f
     ): GeneratedAudio {
-        return generateImpl(ptr, text = text, sid = sid, speed = speed)
+        val arr = generateImpl(ptr, text = text, sid = sid, speed = speed)
+        val samples = arr[0] as FloatArray
+        val sampleRate = arr[1] as Int
+        return GeneratedAudio(samples, sampleRate)
     }
 
     fun generateWithCallback(
@@ -99,13 +78,16 @@ class OfflineTts(
         speed: Float = 1.0f,
         callback: (samples: FloatArray) -> Int
     ): GeneratedAudio {
-        return generateWithCallbackImpl(
+        val arr = generateWithCallbackImpl(
             ptr,
             text = text,
             sid = sid,
             speed = speed,
             callback = callback
         )
+        val samples = arr[0] as FloatArray
+        val sampleRate = arr[1] as Int
+        return GeneratedAudio(samples, sampleRate)
     }
 
     fun allocate(assetManager: AssetManager? = null) {
@@ -147,12 +129,13 @@ class OfflineTts(
     private external fun getSampleRate(ptr: Long): Int
     private external fun getNumSpeakers(ptr: Long): Int
 
+    // JNI returns Object[] containing [FloatArray, Integer]
     private external fun generateImpl(
         ptr: Long,
         text: String,
         sid: Int = 0,
         speed: Float = 1.0f
-    ): GeneratedAudio
+    ): Array<Any>
 
     private external fun generateWithCallbackImpl(
         ptr: Long,
@@ -160,7 +143,7 @@ class OfflineTts(
         sid: Int = 0,
         speed: Float = 1.0f,
         callback: (samples: FloatArray) -> Int
-    ): GeneratedAudio
+    ): Array<Any>
 
     companion object {
         init {
