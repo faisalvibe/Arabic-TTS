@@ -254,14 +254,15 @@ class ModelManager(private val context: Context) {
         if (!onnxFile.exists() || !configJson.exists()) return
 
         // Versioned marker - bump version when metadata format changes
-        val marker = File(onnxFile.parent, "${onnxFile.name}.patched_v2")
+        val marker = File(onnxFile.parent, "${onnxFile.name}.patched_v3")
         val statusFile = File(onnxFile.parent, "${onnxFile.name}.inject_log")
 
-        // Delete old v1 marker (had wrong language field)
+        // Delete old markers
         File(onnxFile.parent, "${onnxFile.name}.patched").delete()
+        File(onnxFile.parent, "${onnxFile.name}.patched_v2").delete()
 
         if (marker.exists()) {
-            statusFile.writeText("SKIP: already patched v2 at ${java.util.Date()}")
+            statusFile.writeText("SKIP: already patched v3 at ${java.util.Date()}")
             return
         }
 
@@ -277,6 +278,7 @@ class ModelManager(private val context: Context) {
                 "sample_rate" to sampleRate.toString(),
                 "n_speakers" to numSpeakers.toString(),
                 "language" to espeakVoice,
+                "voice" to espeakVoice,
                 "comment" to "piper",
                 "add_blank" to "1"
             )
@@ -288,7 +290,7 @@ class ModelManager(private val context: Context) {
             }
             val sizeAfter = onnxFile.length()
 
-            marker.writeText("patched_v2")
+            marker.writeText("patched_v3")
             val msg = "OK: injected ${bytes.size} bytes at ${java.util.Date()}\n" +
                     "size: $sizeBefore -> $sizeAfter\nmetadata: $metadata"
             statusFile.writeText(msg)

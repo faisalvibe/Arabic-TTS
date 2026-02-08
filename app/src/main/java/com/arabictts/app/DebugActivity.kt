@@ -102,7 +102,7 @@ class DebugActivity : AppCompatActivity() {
 
     private fun gatherDebugInfo(): String = buildString {
         appendLine("=== ARABIC TTS DEBUG INFO ===")
-        appendLine("Build: v3-espeak-voice-fix")
+        appendLine("Build: v4-add-voice-metadata")
         appendLine("Time: ${java.util.Date()}")
         appendLine("Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
         appendLine("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
@@ -218,11 +218,9 @@ class DebugActivity : AppCompatActivity() {
         for (name in listOf("ar_JO-kareem-low.onnx", "en_US-amy-low.onnx")) {
             appendLine("[$name]")
             val onnxFile = modelsDir?.let { File(it, name) }
-            val patchedFile = modelsDir?.let { File(it, "$name.patched_v2") }
-            val oldPatchedFile = modelsDir?.let { File(it, "$name.patched") }
-            appendLine("  .patched (old) exists: ${oldPatchedFile?.exists()}")
+            val patchedFile = modelsDir?.let { File(it, "$name.patched_v3") }
             val injectLog = modelsDir?.let { File(it, "$name.inject_log") }
-            appendLine("  .patched_v2 exists: ${patchedFile?.exists()}")
+            appendLine("  .patched_v3 exists: ${patchedFile?.exists()}")
             appendLine("  .inject_log exists: ${injectLog?.exists()}")
             if (injectLog?.exists() == true) {
                 appendLine("  inject_log: ${injectLog.readText().take(500)}")
