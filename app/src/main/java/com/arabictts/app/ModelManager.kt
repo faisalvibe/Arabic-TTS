@@ -1,9 +1,15 @@
 package com.arabictts.app
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
+import org.json.JSONObject
+import java.io.BufferedInputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -14,6 +20,7 @@ import java.net.URL
 class ModelManager(private val context: Context) {
 
     companion object {
+        private const val TAG = "ModelManager"
         private const val BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
         // Arabic: Kareem (Jordanian) - low quality for smaller size
@@ -30,7 +37,7 @@ class ModelManager(private val context: Context) {
 
     data class ModelFiles(
         val modelPath: String,
-        val configPath: String
+        val tokensPath: String
     )
 
     data class DownloadProgress(
@@ -44,17 +51,17 @@ class ModelManager(private val context: Context) {
 
     fun getArabicModelFiles(): ModelFiles? {
         val model = File(modelsDir, "ar_JO-kareem-low.onnx")
-        val config = File(modelsDir, "ar_JO-kareem-low.onnx.json")
-        return if (model.exists() && config.exists()) {
-            ModelFiles(model.absolutePath, config.absolutePath)
+        val tokens = File(modelsDir, "ar_JO-kareem-low-tokens.txt")
+        return if (model.exists() && tokens.exists()) {
+            ModelFiles(model.absolutePath, tokens.absolutePath)
         } else null
     }
 
     fun getEnglishModelFiles(): ModelFiles? {
         val model = File(modelsDir, "en_US-amy-low.onnx")
-        val config = File(modelsDir, "en_US-amy-low.onnx.json")
-        return if (model.exists() && config.exists()) {
-            ModelFiles(model.absolutePath, config.absolutePath)
+        val tokens = File(modelsDir, "en_US-amy-low-tokens.txt")
+        return if (model.exists() && tokens.exists()) {
+            ModelFiles(model.absolutePath, tokens.absolutePath)
         } else null
     }
 
@@ -75,7 +82,7 @@ class ModelManager(private val context: Context) {
     ) = withContext(Dispatchers.IO) {
         modelsDir.mkdirs()
 
-        // Download Arabic model + config
+        // Download Arabic model + config, then generate tokens.txt
         downloadFile(
             "$BASE_URL/$AR_MODEL_PATH",
             File(modelsDir, "ar_JO-kareem-low.onnx"),
@@ -88,7 +95,12 @@ class ModelManager(private val context: Context) {
             "Arabic config"
         ) { bytes, total -> onProgress(DownloadProgress("Arabic config", bytes, total)) }
 
-        // Download English model + config
+        generateTokensFile(
+            File(modelsDir, "ar_JO-kareem-low.onnx.json"),
+            File(modelsDir, "ar_JO-kareem-low-tokens.txt")
+        )
+
+        // Download English model + config, then generate tokens.txt
         downloadFile(
             "$BASE_URL/$EN_MODEL_PATH",
             File(modelsDir, "en_US-amy-low.onnx"),
@@ -100,6 +112,11 @@ class ModelManager(private val context: Context) {
             File(modelsDir, "en_US-amy-low.onnx.json"),
             "English config"
         ) { bytes, total -> onProgress(DownloadProgress("English config", bytes, total)) }
+
+        generateTokensFile(
+            File(modelsDir, "en_US-amy-low.onnx.json"),
+            File(modelsDir, "en_US-amy-low-tokens.txt")
+        )
 
         // Download and extract espeak-ng data
         if (!espeakDir.exists()) {
@@ -176,20 +193,88 @@ class ModelManager(private val context: Context) {
         }
     }
 
-    private fun extractTarBz2(tarBz2File: File, destDir: File) {
-        val process = ProcessBuilder(
-            "tar", "xjf", tarBz2File.absolutePath, "-C", destDir.absolutePath
-        ).start()
-        val exitCode = process.waitFor()
-        if (exitCode != 0) {
-            // Fallback: try with busybox or just bzip2 + tar
-            val process2 = ProcessBuilder(
-                "sh", "-c",
-                "cd ${destDir.absolutePath} && bzip2 -dc ${tarBz2File.absolutePath} | tar xf -"
-            ).start()
-            if (process2.waitFor() != 0) {
-                throw Exception("Failed to extract espeak-ng data (exit code: $exitCode)")
+    /**
+     * Parses a Piper .onnx.json config and generates the tokens.txt that sherpa-onnx needs.
+     * The JSON has a "phoneme_id_map" like {"_": [0], "^": [1], ...}.
+     * tokens.txt needs lines like "_\n^\n..." where line number = token ID.
+     */
+    private fun generateTokensFile(configJson: File, tokensFile: File) {
+        if (tokensFile.exists()) return
+        if (!configJson.exists()) throw Exception("Config file not found: ${configJson.name}")
+
+        try {
+            val json = JSONObject(configJson.readText())
+            val phonemeIdMap = json.getJSONObject("phoneme_id_map")
+
+            // Build id -> phoneme mapping
+            val idToPhoneme = mutableMapOf<Int, String>()
+            val keys = phonemeIdMap.keys()
+            while (keys.hasNext()) {
+                val phoneme = keys.next()
+                val ids = phonemeIdMap.getJSONArray(phoneme)
+                for (i in 0 until ids.length()) {
+                    idToPhoneme[ids.getInt(i)] = phoneme
+                }
             }
+
+            // Write tokens.txt: each line is the phoneme for that token ID
+            val maxId = idToPhoneme.keys.maxOrNull() ?: return
+            tokensFile.bufferedWriter().use { writer ->
+                for (id in 0..maxId) {
+                    val phoneme = idToPhoneme[id] ?: ""
+                    writer.write(phoneme)
+                    writer.write(" ")
+                    writer.write(id.toString())
+                    writer.newLine()
+                }
+            }
+            Log.i(TAG, "Generated tokens file: ${tokensFile.name} with ${maxId + 1} tokens")
+        } catch (e: Exception) {
+            tokensFile.delete()
+            throw Exception("Failed to generate tokens from ${configJson.name}: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Extracts a .tar.bz2 archive using Apache Commons Compress (pure Java, works on all Android).
+     */
+    private fun extractTarBz2(tarBz2File: File, destDir: File) {
+        Log.i(TAG, "Extracting ${tarBz2File.name} to ${destDir.absolutePath}")
+        val fis = FileInputStream(tarBz2File)
+        val bis = BufferedInputStream(fis)
+        val bzis = BZip2CompressorInputStream(bis)
+        val tais = TarArchiveInputStream(bzis)
+
+        try {
+            var entry = tais.nextTarEntry
+            while (entry != null) {
+                val outFile = File(destDir, entry.name)
+
+                // Prevent path traversal
+                if (!outFile.canonicalPath.startsWith(destDir.canonicalPath)) {
+                    throw Exception("Bad tar entry: ${entry.name}")
+                }
+
+                if (entry.isDirectory) {
+                    outFile.mkdirs()
+                } else {
+                    outFile.parentFile?.mkdirs()
+                    FileOutputStream(outFile).use { fos ->
+                        val buffer = ByteArray(8192)
+                        var len: Int
+                        while (tais.read(buffer).also { len = it } != -1) {
+                            fos.write(buffer, 0, len)
+                        }
+                    }
+                }
+                entry = tais.nextTarEntry
+            }
+            Log.i(TAG, "Extraction complete")
+        } finally {
+            tais.close()
+            bzis.close()
+            bis.close()
+            fis.close()
         }
     }
 }

@@ -60,6 +60,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
+    // For extracting espeak-ng-data.tar.bz2 on Android
+    implementation("org.apache.commons:commons-compress:1.26.1")
+
     // Sherpa-ONNX native libs are bundled in src/main/jniLibs/
     // Kotlin API source is included directly in src/main/java/com/k2fsa/sherpa/onnx/
 }

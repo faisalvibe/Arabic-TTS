@@ -129,8 +129,8 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
 
-            val arResult = ttsEngine.initArabic(arModel.modelPath, arModel.configPath, espeakData)
-            val enResult = ttsEngine.initEnglish(enModel.modelPath, enModel.configPath, espeakData)
+            val arResult = ttsEngine.initArabic(arModel.modelPath, arModel.tokensPath, espeakData)
+            val enResult = ttsEngine.initEnglish(enModel.modelPath, enModel.tokensPath, espeakData)
 
             withContext(Dispatchers.Main) {
                 if (arResult.success && enResult.success) {

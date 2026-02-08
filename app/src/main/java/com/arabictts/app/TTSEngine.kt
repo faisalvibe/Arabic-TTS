@@ -28,18 +28,19 @@ class TTSEngine {
 
     data class InitResult(val success: Boolean, val error: String? = null)
 
-    fun initArabic(modelPath: String, configPath: String, espeakDataDir: String): InitResult {
+    fun initArabic(modelPath: String, tokensPath: String, espeakDataDir: String): InitResult {
         return try {
+            Log.i(TAG, "Initializing Arabic TTS: model=$modelPath, tokens=$tokensPath, espeak=$espeakDataDir")
             val vitsConfig = OfflineTtsVitsModelConfig(
                 model = modelPath,
-                tokens = "",
+                tokens = tokensPath,
                 dataDir = espeakDataDir,
                 dictDir = ""
             )
             val modelConfig = OfflineTtsModelConfig(
                 vits = vitsConfig,
                 numThreads = 2,
-                debug = false,
+                debug = true,
                 provider = "cpu"
             )
             val config = OfflineTtsConfig(
@@ -52,21 +53,25 @@ class TTSEngine {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to init Arabic TTS", e)
             InitResult(false, e.message)
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Native library error for Arabic TTS", e)
+            InitResult(false, "Native library error: ${e.message}")
         }
     }
 
-    fun initEnglish(modelPath: String, configPath: String, espeakDataDir: String): InitResult {
+    fun initEnglish(modelPath: String, tokensPath: String, espeakDataDir: String): InitResult {
         return try {
+            Log.i(TAG, "Initializing English TTS: model=$modelPath, tokens=$tokensPath, espeak=$espeakDataDir")
             val vitsConfig = OfflineTtsVitsModelConfig(
                 model = modelPath,
-                tokens = "",
+                tokens = tokensPath,
                 dataDir = espeakDataDir,
                 dictDir = ""
             )
             val modelConfig = OfflineTtsModelConfig(
                 vits = vitsConfig,
                 numThreads = 2,
-                debug = false,
+                debug = true,
                 provider = "cpu"
             )
             val config = OfflineTtsConfig(
@@ -79,6 +84,9 @@ class TTSEngine {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to init English TTS", e)
             InitResult(false, e.message)
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Native library error for English TTS", e)
+            InitResult(false, "Native library error: ${e.message}")
         }
     }
 
