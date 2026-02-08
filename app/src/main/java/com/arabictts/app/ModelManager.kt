@@ -8,6 +8,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import org.json.JSONObject
 import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -74,6 +75,8 @@ class ModelManager(private val context: Context) {
     fun areModelsReady(): Boolean {
         // Always regenerate tokens.txt to fix any broken format from older versions
         ensureTokenFiles()
+        // Inject required ONNX metadata into Piper models (sherpa-onnx exits if missing)
+        ensureOnnxMetadata()
         return getArabicModelFiles() != null &&
                 getEnglishModelFiles() != null &&
                 getEspeakDataDir() != null
@@ -101,6 +104,10 @@ class ModelManager(private val context: Context) {
             File(modelsDir, "ar_JO-kareem-low.onnx.json"),
             File(modelsDir, "ar_JO-kareem-low-tokens.txt")
         )
+        injectOnnxMetadata(
+            File(modelsDir, "ar_JO-kareem-low.onnx"),
+            File(modelsDir, "ar_JO-kareem-low.onnx.json")
+        )
 
         // Download English model + config, then generate tokens.txt
         downloadFile(
@@ -118,6 +125,10 @@ class ModelManager(private val context: Context) {
         generateTokensFile(
             File(modelsDir, "en_US-amy-low.onnx.json"),
             File(modelsDir, "en_US-amy-low-tokens.txt")
+        )
+        injectOnnxMetadata(
+            File(modelsDir, "en_US-amy-low.onnx"),
+            File(modelsDir, "en_US-amy-low.onnx.json")
         )
 
         // Download and extract espeak-ng data
@@ -214,6 +225,99 @@ class ModelManager(private val context: Context) {
             enTokens.delete()
             generateTokensFile(enConfig, enTokens)
         }
+    }
+
+    /**
+     * Ensures ONNX model files have the required metadata for sherpa-onnx.
+     * Sherpa-onnx VITS loader calls exit(-1) if these are missing from ONNX metadata:
+     *   sample_rate, n_speakers, language, comment
+     * Piper models from HuggingFace store this in the JSON config, not in the ONNX model.
+     * This function appends protobuf metadata entries to the ONNX files.
+     */
+    fun ensureOnnxMetadata() {
+        injectOnnxMetadata(
+            File(modelsDir, "ar_JO-kareem-low.onnx"),
+            File(modelsDir, "ar_JO-kareem-low.onnx.json")
+        )
+        injectOnnxMetadata(
+            File(modelsDir, "en_US-amy-low.onnx"),
+            File(modelsDir, "en_US-amy-low.onnx.json")
+        )
+    }
+
+    /**
+     * Reads metadata from a Piper .onnx.json config and appends it as protobuf
+     * metadata_props entries to the ONNX model file.
+     * Uses a .patched marker file to avoid double-injection.
+     */
+    private fun injectOnnxMetadata(onnxFile: File, configJson: File) {
+        val marker = File(onnxFile.parent, "${onnxFile.name}.patched")
+        if (marker.exists()) return
+        if (!onnxFile.exists() || !configJson.exists()) return
+
+        try {
+            val json = JSONObject(configJson.readText())
+
+            val sampleRate = json.getJSONObject("audio").getInt("sample_rate")
+            val numSpeakers = json.optInt("num_speakers", 1)
+            val language = json.optJSONObject("language")?.optString("family", "en") ?: "en"
+
+            val metadata = mapOf(
+                "sample_rate" to sampleRate.toString(),
+                "n_speakers" to numSpeakers.toString(),
+                "language" to language,
+                "comment" to "piper",
+                "add_blank" to "1"
+            )
+
+            val bytes = buildProtobufMetadata(metadata)
+            FileOutputStream(onnxFile, true).use { fos ->
+                fos.write(bytes)
+            }
+
+            marker.writeText("patched")
+            Log.i(TAG, "Injected ONNX metadata into ${onnxFile.name}: $metadata")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to inject ONNX metadata into ${onnxFile.name}: ${e.message}")
+        }
+    }
+
+    /**
+     * Builds protobuf bytes for ModelProto.metadata_props (field 14) entries.
+     * Each entry is a StringStringEntryProto with key (field 1) and value (field 2).
+     * These bytes can be appended to a serialized ONNX ModelProto file.
+     */
+    private fun buildProtobufMetadata(metadata: Map<String, String>): ByteArray {
+        val baos = ByteArrayOutputStream()
+        for ((key, value) in metadata) {
+            val keyBytes = key.toByteArray(Charsets.UTF_8)
+            val valueBytes = value.toByteArray(Charsets.UTF_8)
+
+            // Build submessage (StringStringEntryProto)
+            val submsg = ByteArrayOutputStream()
+            submsg.write(0x0A) // field 1 (key), wire type 2
+            writeVarint(submsg, keyBytes.size)
+            submsg.write(keyBytes)
+            submsg.write(0x12) // field 2 (value), wire type 2
+            writeVarint(submsg, valueBytes.size)
+            submsg.write(valueBytes)
+            val submsgBytes = submsg.toByteArray()
+
+            // Field 14 (metadata_props), wire type 2 = (14 << 3) | 2 = 0x72
+            baos.write(0x72)
+            writeVarint(baos, submsgBytes.size)
+            baos.write(submsgBytes)
+        }
+        return baos.toByteArray()
+    }
+
+    private fun writeVarint(stream: ByteArrayOutputStream, value: Int) {
+        var v = value
+        while (v > 0x7F) {
+            stream.write((v and 0x7F) or 0x80)
+            v = v ushr 7
+        }
+        stream.write(v and 0x7F)
     }
 
     /**
