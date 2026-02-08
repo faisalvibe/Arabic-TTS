@@ -37,36 +37,35 @@ class TTSApplication : Application() {
             val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             val exitReasons = am.getHistoricalProcessExitReasons(packageName, 0, 5)
 
-            val crashReasons = exitReasons.filter { info ->
-                info.reason == ApplicationExitInfo.REASON_CRASH_NATIVE ||
-                info.reason == ApplicationExitInfo.REASON_CRASH ||
-                info.reason == ApplicationExitInfo.REASON_ANR
-            }
-
-            if (crashReasons.isEmpty()) {
-                // No recent crashes - clear old crash file
+            if (exitReasons.isEmpty()) {
                 File(filesDir, NATIVE_CRASH_FILE).delete()
                 return
             }
 
             val report = buildString {
-                appendLine("=== PREVIOUS CRASH INFO (ApplicationExitInfo) ===")
-                for (info in crashReasons) {
+                appendLine("=== PREVIOUS EXIT INFO (ApplicationExitInfo) ===")
+                appendLine("Total exit records: ${exitReasons.size}")
+                for (info in exitReasons) {
                     val reasonStr = when (info.reason) {
                         ApplicationExitInfo.REASON_CRASH_NATIVE -> "NATIVE_CRASH"
                         ApplicationExitInfo.REASON_CRASH -> "JAVA_CRASH"
                         ApplicationExitInfo.REASON_ANR -> "ANR"
-                        else -> "REASON_${info.reason}"
+                        ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
+                        ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
+                        ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
+                        ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
+                        ApplicationExitInfo.REASON_OTHER -> "OTHER"
+                        else -> "UNKNOWN_${info.reason}"
                     }
                     appendLine()
-                    appendLine("--- Exit Reason: $reasonStr ---")
+                    appendLine("--- Exit Reason: $reasonStr (code ${info.reason}) ---")
                     appendLine("Time: ${java.util.Date(info.timestamp)}")
                     appendLine("PID: ${info.pid}")
+                    appendLine("Process: ${info.processName}")
                     appendLine("Importance: ${info.importance}")
-                    appendLine("Status: ${info.status}")
+                    appendLine("Status/Signal: ${info.status}")
                     appendLine("Description: ${info.description}")
-                    appendLine("PSS: ${info.pss} KB")
-                    appendLine("RSS: ${info.rss} KB")
+                    appendLine("PSS: ${info.pss} KB, RSS: ${info.rss} KB")
 
                     // Try to read the trace/tombstone
                     try {
@@ -83,11 +82,11 @@ class TTSApplication : Application() {
                     }
                 }
                 appendLine()
-                appendLine("=== END PREVIOUS CRASH INFO ===")
+                appendLine("=== END PREVIOUS EXIT INFO ===")
             }
 
             File(filesDir, NATIVE_CRASH_FILE).writeText(report)
-            Log.i(TAG, "Captured previous crash info: ${crashReasons.size} entries")
+            Log.i(TAG, "Captured previous exit info: ${exitReasons.size} entries")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to capture native crash info", e)
         }
