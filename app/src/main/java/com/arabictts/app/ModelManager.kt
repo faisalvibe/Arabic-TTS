@@ -253,11 +253,15 @@ class ModelManager(private val context: Context) {
     private fun injectOnnxMetadata(onnxFile: File, configJson: File) {
         if (!onnxFile.exists() || !configJson.exists()) return
 
-        val marker = File(onnxFile.parent, "${onnxFile.name}.patched")
+        // Versioned marker - bump version when metadata format changes
+        val marker = File(onnxFile.parent, "${onnxFile.name}.patched_v2")
         val statusFile = File(onnxFile.parent, "${onnxFile.name}.inject_log")
 
+        // Delete old v1 marker (had wrong language field)
+        File(onnxFile.parent, "${onnxFile.name}.patched").delete()
+
         if (marker.exists()) {
-            statusFile.writeText("SKIP: already patched at ${java.util.Date()}")
+            statusFile.writeText("SKIP: already patched v2 at ${java.util.Date()}")
             return
         }
 
@@ -266,12 +270,13 @@ class ModelManager(private val context: Context) {
 
             val sampleRate = json.getJSONObject("audio").getInt("sample_rate")
             val numSpeakers = json.optInt("num_speakers", 1)
-            val language = json.optJSONObject("language")?.optString("family", "en") ?: "en"
+            // Use espeak.voice (e.g. "ar", "en-us") not language.family (e.g. "en")
+            val espeakVoice = json.optJSONObject("espeak")?.optString("voice", "en-us") ?: "en-us"
 
             val metadata = mapOf(
                 "sample_rate" to sampleRate.toString(),
                 "n_speakers" to numSpeakers.toString(),
-                "language" to language,
+                "language" to espeakVoice,
                 "comment" to "piper",
                 "add_blank" to "1"
             )
@@ -283,7 +288,7 @@ class ModelManager(private val context: Context) {
             }
             val sizeAfter = onnxFile.length()
 
-            marker.writeText("patched")
+            marker.writeText("patched_v2")
             val msg = "OK: injected ${bytes.size} bytes at ${java.util.Date()}\n" +
                     "size: $sizeBefore -> $sizeAfter\nmetadata: $metadata"
             statusFile.writeText(msg)
