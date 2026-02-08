@@ -251,15 +251,13 @@ class ModelManager(private val context: Context) {
      * Uses a .patched marker file to avoid double-injection.
      */
     private fun injectOnnxMetadata(onnxFile: File, configJson: File) {
+        if (!onnxFile.exists() || !configJson.exists()) return
+
         val marker = File(onnxFile.parent, "${onnxFile.name}.patched")
         val statusFile = File(onnxFile.parent, "${onnxFile.name}.inject_log")
 
         if (marker.exists()) {
             statusFile.writeText("SKIP: already patched at ${java.util.Date()}")
-            return
-        }
-        if (!onnxFile.exists() || !configJson.exists()) {
-            statusFile.writeText("SKIP: missing files onnx=${onnxFile.exists()} json=${configJson.exists()}")
             return
         }
 
