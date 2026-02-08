@@ -211,6 +211,35 @@ class DebugActivity : AppCompatActivity() {
             }
         }
 
+        // Show ONNX metadata injection status
+        appendLine()
+        appendLine("--- ONNX Metadata Patch Status ---")
+        for (name in listOf("ar_JO-kareem-low.onnx", "en_US-amy-low.onnx")) {
+            appendLine("[$name]")
+            val onnxFile = modelsDir?.let { File(it, name) }
+            val patchedFile = modelsDir?.let { File(it, "$name.patched") }
+            val injectLog = modelsDir?.let { File(it, "$name.inject_log") }
+            appendLine("  .patched exists: ${patchedFile?.exists()}")
+            appendLine("  .inject_log exists: ${injectLog?.exists()}")
+            if (injectLog?.exists() == true) {
+                appendLine("  inject_log: ${injectLog.readText().take(500)}")
+            }
+            // Show last 100 bytes of ONNX file to verify metadata was appended
+            if (onnxFile?.exists() == true && onnxFile.length() > 100) {
+                try {
+                    val raf = java.io.RandomAccessFile(onnxFile, "r")
+                    raf.seek(onnxFile.length() - 100)
+                    val tail = ByteArray(100)
+                    raf.readFully(tail)
+                    raf.close()
+                    val hex = tail.joinToString(" ") { "%02X".format(it) }
+                    appendLine("  tail 100 bytes: $hex")
+                } catch (e: Exception) {
+                    appendLine("  tail read error: ${e.message}")
+                }
+            }
+        }
+
         // Check native libs
         appendLine()
         appendLine("--- Native Libraries ---")

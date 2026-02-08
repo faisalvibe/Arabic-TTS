@@ -252,8 +252,16 @@ class ModelManager(private val context: Context) {
      */
     private fun injectOnnxMetadata(onnxFile: File, configJson: File) {
         val marker = File(onnxFile.parent, "${onnxFile.name}.patched")
-        if (marker.exists()) return
-        if (!onnxFile.exists() || !configJson.exists()) return
+        val statusFile = File(onnxFile.parent, "${onnxFile.name}.inject_log")
+
+        if (marker.exists()) {
+            statusFile.writeText("SKIP: already patched at ${java.util.Date()}")
+            return
+        }
+        if (!onnxFile.exists() || !configJson.exists()) {
+            statusFile.writeText("SKIP: missing files onnx=${onnxFile.exists()} json=${configJson.exists()}")
+            return
+        }
 
         try {
             val json = JSONObject(configJson.readText())
@@ -270,14 +278,20 @@ class ModelManager(private val context: Context) {
                 "add_blank" to "1"
             )
 
+            val sizeBefore = onnxFile.length()
             val bytes = buildProtobufMetadata(metadata)
             FileOutputStream(onnxFile, true).use { fos ->
                 fos.write(bytes)
             }
+            val sizeAfter = onnxFile.length()
 
             marker.writeText("patched")
+            val msg = "OK: injected ${bytes.size} bytes at ${java.util.Date()}\n" +
+                    "size: $sizeBefore -> $sizeAfter\nmetadata: $metadata"
+            statusFile.writeText(msg)
             Log.i(TAG, "Injected ONNX metadata into ${onnxFile.name}: $metadata")
         } catch (e: Exception) {
+            statusFile.writeText("FAIL at ${java.util.Date()}: ${e.message}\n${e.stackTraceToString()}")
             Log.e(TAG, "Failed to inject ONNX metadata into ${onnxFile.name}: ${e.message}")
         }
     }
