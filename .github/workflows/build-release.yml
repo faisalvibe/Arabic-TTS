@@ -2,6 +2,8 @@ name: Build and Release APK
 
 on:
   push:
+    branches:
+      - 'claude/github-release-apk-*'
     tags:
       - 'v*'
   workflow_dispatch:
@@ -29,25 +31,32 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Arabic TTS ${{ github.ref_name }}
-          body: |
-            ## Arabic TTS - Bilingual Text-to-Speech App
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
 
-            Offline Arabic and English text-to-speech Android application powered by Sherpa-ONNX.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete existing v1.0.0 release/tag if present
+          gh release delete v1.0.0 --yes --cleanup-tag 2>/dev/null || true
+          # Create the release with the APK attached
+          gh release create v1.0.0 \
+            app/build/outputs/apk/debug/app-debug.apk \
+            --title "Arabic TTS v1.0.0" \
+            --notes "## Arabic TTS - Bilingual Text-to-Speech App
 
-            ### Features
-            - Offline Arabic TTS using VITS model
-            - English TTS support
-            - Automatic language detection
-            - Adjustable speech speed
-            - No internet required after model download
+          Offline Arabic and English text-to-speech Android application powered by Sherpa-ONNX.
 
-            ### Install
-            Download `app-debug.apk` below and install on your Android device.
-          files: app/build/outputs/apk/debug/app-debug.apk
-          draft: false
-          prerelease: false
+          ### Features
+          - Offline Arabic TTS using VITS model
+          - English TTS support
+          - Automatic language detection
+          - Adjustable speech speed
+          - No internet required after model download
+
+          ### Install
+          Download \`app-debug.apk\` below and install on your Android device."
