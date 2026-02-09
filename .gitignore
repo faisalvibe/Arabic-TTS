@@ -1,0 +1,16 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+/app/build
+*.apk
+*.aab
+*.ap_
+
+# Keep native libs tracked (they're essential for the build)
+# !app/src/main/jniLibs/

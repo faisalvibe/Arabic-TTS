@@ -1,0 +1,62 @@
+name: Build and Release APK
+
+on:
+  push:
+    branches:
+      - 'claude/github-release-apk-*'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete existing v1.0.0 release/tag if present
+          gh release delete v1.0.0 --yes --cleanup-tag 2>/dev/null || true
+          # Create the release with the APK attached
+          gh release create v1.0.0 \
+            app/build/outputs/apk/debug/app-debug.apk \
+            --title "Arabic TTS v1.0.0" \
+            --notes "## Arabic TTS - Bilingual Text-to-Speech App
+
+          Offline Arabic and English text-to-speech Android application powered by Sherpa-ONNX.
+
+          ### Features
+          - Offline Arabic TTS using VITS model
+          - English TTS support
+          - Automatic language detection
+          - Adjustable speech speed
+          - No internet required after model download
+
+          ### Install
+          Download \`app-debug.apk\` below and install on your Android device."
