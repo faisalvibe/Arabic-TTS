@@ -231,6 +231,7 @@ class ModelManager(private val context: Context) {
      * Ensures ONNX model files have the required metadata for sherpa-onnx.
      * Sherpa-onnx VITS loader calls exit(-1) if these are missing from ONNX metadata:
      *   sample_rate, n_speakers, language, comment
+     * Additionally, 'voice' is needed for espeak_SetVoiceByName() (defaults to "" if missing).
      * Piper models from HuggingFace store this in the JSON config, not in the ONNX model.
      * This function appends protobuf metadata entries to the ONNX files.
      */
@@ -248,24 +249,38 @@ class ModelManager(private val context: Context) {
     /**
      * Reads metadata from a Piper .onnx.json config and appends it as protobuf
      * metadata_props entries to the ONNX model file.
-     * Uses a .patched marker file to avoid double-injection.
+     * Uses a versioned .patched marker file to track injection state.
+     *
+     * If upgrading from an older patch version, the ONNX file is deleted to force
+     * a clean re-download, since appending multiple patches corrupts the file
+     * with duplicate metadata_props entries.
      */
     private fun injectOnnxMetadata(onnxFile: File, configJson: File) {
         if (!onnxFile.exists() || !configJson.exists()) return
 
-        // Versioned marker - bump version when metadata format changes
-        val marker = File(onnxFile.parent, "${onnxFile.name}.patched_v3")
         val statusFile = File(onnxFile.parent, "${onnxFile.name}.inject_log")
+        val marker = File(onnxFile.parent, "${onnxFile.name}.patched_v3")
 
-        // Delete old markers
-        File(onnxFile.parent, "${onnxFile.name}.patched").delete()
-        File(onnxFile.parent, "${onnxFile.name}.patched_v2").delete()
-
+        // Already patched with current version - nothing to do
         if (marker.exists()) {
             statusFile.writeText("SKIP: already patched v3 at ${java.util.Date()}")
             return
         }
 
+        // Check for old patch versions - if found, the ONNX file has stale metadata
+        // appended to it. Delete it to force a clean re-download.
+        val oldV1 = File(onnxFile.parent, "${onnxFile.name}.patched")
+        val oldV2 = File(onnxFile.parent, "${onnxFile.name}.patched_v2")
+        if (oldV1.exists() || oldV2.exists()) {
+            Log.i(TAG, "Deleting ${onnxFile.name} to force clean re-download (upgrading from old patch)")
+            onnxFile.delete()
+            oldV1.delete()
+            oldV2.delete()
+            statusFile.writeText("DELETED: old patched ONNX removed for clean re-download at ${java.util.Date()}")
+            return
+        }
+
+        // Fresh ONNX file (never patched) - inject metadata
         try {
             val json = JSONObject(configJson.readText())
 
@@ -290,9 +305,9 @@ class ModelManager(private val context: Context) {
             }
             val sizeAfter = onnxFile.length()
 
-            marker.writeText("patched_v3")
+            marker.writeText("v3:$sizeBefore")
             val msg = "OK: injected ${bytes.size} bytes at ${java.util.Date()}\n" +
-                    "size: $sizeBefore -> $sizeAfter\nmetadata: $metadata"
+                    "original_size: $sizeBefore, patched_size: $sizeAfter\nmetadata: $metadata"
             statusFile.writeText(msg)
             Log.i(TAG, "Injected ONNX metadata into ${onnxFile.name}: $metadata")
         } catch (e: Exception) {
