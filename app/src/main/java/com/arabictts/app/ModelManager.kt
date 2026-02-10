@@ -24,9 +24,10 @@ class ModelManager(private val context: Context) {
         private const val TAG = "ModelManager"
         private const val BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
-        // Arabic: Kareem (Jordanian) - low quality for smaller size
-        private const val AR_MODEL_PATH = "ar/ar_JO/kareem/low/ar_JO-kareem-low.onnx"
-        private const val AR_CONFIG_PATH = "ar/ar_JO/kareem/low/ar_JO-kareem-low.onnx.json"
+        // Arabic: Emirati female voice
+        private const val AR_BASE_URL = "https://huggingface.co/vadimbelsky/arabic-emirati-female-piper/resolve/main"
+        private const val AR_MODEL_PATH = "arabic-emirati-female-model.onnx"
+        private const val AR_CONFIG_PATH = "arabic-emirati-female-model.onnx.json"
 
         // English: Amy (US) - low quality for smaller size
         private const val EN_MODEL_PATH = "en/en_US/amy/low/en_US-amy-low.onnx"
@@ -51,8 +52,8 @@ class ModelManager(private val context: Context) {
     private val espeakDir = File(context.filesDir, "espeak-ng-data")
 
     fun getArabicModelFiles(): ModelFiles? {
-        val model = File(modelsDir, "ar_JO-kareem-low.onnx")
-        val tokens = File(modelsDir, "ar_JO-kareem-low-tokens.txt")
+        val model = File(modelsDir, "arabic-emirati-female-model.onnx")
+        val tokens = File(modelsDir, "arabic-emirati-female-model-tokens.txt")
         return if (model.exists() && tokens.exists()) {
             ModelFiles(model.absolutePath, tokens.absolutePath)
         } else null
@@ -89,24 +90,24 @@ class ModelManager(private val context: Context) {
 
         // Download Arabic model + config, then generate tokens.txt
         downloadFile(
-            "$BASE_URL/$AR_MODEL_PATH",
-            File(modelsDir, "ar_JO-kareem-low.onnx"),
+            "$AR_BASE_URL/$AR_MODEL_PATH",
+            File(modelsDir, "arabic-emirati-female-model.onnx"),
             "Arabic voice model"
         ) { bytes, total -> onProgress(DownloadProgress("Arabic voice model", bytes, total)) }
 
         downloadFile(
-            "$BASE_URL/$AR_CONFIG_PATH",
-            File(modelsDir, "ar_JO-kareem-low.onnx.json"),
+            "$AR_BASE_URL/$AR_CONFIG_PATH",
+            File(modelsDir, "arabic-emirati-female-model.onnx.json"),
             "Arabic config"
         ) { bytes, total -> onProgress(DownloadProgress("Arabic config", bytes, total)) }
 
         generateTokensFile(
-            File(modelsDir, "ar_JO-kareem-low.onnx.json"),
-            File(modelsDir, "ar_JO-kareem-low-tokens.txt")
+            File(modelsDir, "arabic-emirati-female-model.onnx.json"),
+            File(modelsDir, "arabic-emirati-female-model-tokens.txt")
         )
         injectOnnxMetadata(
-            File(modelsDir, "ar_JO-kareem-low.onnx"),
-            File(modelsDir, "ar_JO-kareem-low.onnx.json")
+            File(modelsDir, "arabic-emirati-female-model.onnx"),
+            File(modelsDir, "arabic-emirati-female-model.onnx.json")
         )
 
         // Download English model + config, then generate tokens.txt
@@ -212,8 +213,8 @@ class ModelManager(private val context: Context) {
      * a bug writing duplicate token entries (which causes sherpa-onnx to exit(-1)).
      */
     fun ensureTokenFiles() {
-        val arConfig = File(modelsDir, "ar_JO-kareem-low.onnx.json")
-        val arTokens = File(modelsDir, "ar_JO-kareem-low-tokens.txt")
+        val arConfig = File(modelsDir, "arabic-emirati-female-model.onnx.json")
+        val arTokens = File(modelsDir, "arabic-emirati-female-model-tokens.txt")
         if (arConfig.exists()) {
             arTokens.delete()
             generateTokensFile(arConfig, arTokens)
@@ -237,8 +238,8 @@ class ModelManager(private val context: Context) {
      */
     fun ensureOnnxMetadata() {
         injectOnnxMetadata(
-            File(modelsDir, "ar_JO-kareem-low.onnx"),
-            File(modelsDir, "ar_JO-kareem-low.onnx.json")
+            File(modelsDir, "arabic-emirati-female-model.onnx"),
+            File(modelsDir, "arabic-emirati-female-model.onnx.json")
         )
         injectOnnxMetadata(
             File(modelsDir, "en_US-amy-low.onnx"),

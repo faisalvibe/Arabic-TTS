@@ -5,7 +5,7 @@ Bilingual Arabic/English text-to-speech Android app that runs entirely on-device
 ## Features
 
 - On-device TTS using Piper VITS models via Sherpa-ONNX
-- Arabic voice: ar_JO-kareem (Jordanian Arabic, male)
+- Arabic voice: arabic-emirati-female (Emirati Arabic, female)
 - English voice: en_US-amy (American English, female)
 - Automatic Arabic/English language detection for mixed text
 - Adjustable speech speed (0.5x - 2.0x)
