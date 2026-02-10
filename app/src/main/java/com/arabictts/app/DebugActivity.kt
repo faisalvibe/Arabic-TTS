@@ -165,7 +165,7 @@ class DebugActivity : AppCompatActivity() {
         // Show tokens.txt content preview (with hex dump for debugging format issues)
         appendLine()
         appendLine("--- tokens.txt Preview ---")
-        for (name in listOf("ar_JO-kareem-low-tokens.txt", "en_US-amy-low-tokens.txt")) {
+        for (name in listOf("arabic-emirati-female-model-tokens.txt", "en_US-amy-low-tokens.txt")) {
             val f = modelsDir?.let { File(it, name) }
             appendLine("[$name]")
             if (f?.exists() == true) {
@@ -189,7 +189,7 @@ class DebugActivity : AppCompatActivity() {
         // Show JSON config preview
         appendLine()
         appendLine("--- Model Config Preview ---")
-        for (name in listOf("ar_JO-kareem-low.onnx.json", "en_US-amy-low.onnx.json")) {
+        for (name in listOf("arabic-emirati-female-model.onnx.json", "en_US-amy-low.onnx.json")) {
             val f = modelsDir?.let { File(it, name) }
             appendLine("[$name]")
             if (f?.exists() == true) {
@@ -215,7 +215,7 @@ class DebugActivity : AppCompatActivity() {
         // Show ONNX metadata injection status
         appendLine()
         appendLine("--- ONNX Metadata Patch Status ---")
-        for (name in listOf("ar_JO-kareem-low.onnx", "en_US-amy-low.onnx")) {
+        for (name in listOf("arabic-emirati-female-model.onnx", "en_US-amy-low.onnx")) {
             appendLine("[$name]")
             val onnxFile = modelsDir?.let { File(it, name) }
             val patchedFile = modelsDir?.let { File(it, "$name.patched_v3") }
