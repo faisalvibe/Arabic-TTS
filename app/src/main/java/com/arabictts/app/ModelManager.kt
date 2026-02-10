@@ -1,6 +1,7 @@
 package com.arabictts.app
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -34,6 +35,11 @@ class ModelManager(private val context: Context) {
 
         // Data tokens file needed by Piper
         private const val ESPEAK_DATA_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2"
+
+        // Custom Arabic voice model filenames
+        private const val CUSTOM_AR_MODEL = "custom_ar.onnx"
+        private const val CUSTOM_AR_CONFIG = "custom_ar.onnx.json"
+        private const val CUSTOM_AR_TOKENS = "custom_ar-tokens.txt"
     }
 
     data class ModelFiles(
@@ -70,6 +76,91 @@ class ModelManager(private val context: Context) {
         return if (espeakDir.exists() && espeakDir.isDirectory) {
             espeakDir.absolutePath
         } else null
+    }
+
+    /**
+     * Returns custom Arabic model files if imported, otherwise null.
+     */
+    fun getCustomArabicModelFiles(): ModelFiles? {
+        val model = File(modelsDir, CUSTOM_AR_MODEL)
+        val tokens = File(modelsDir, CUSTOM_AR_TOKENS)
+        return if (model.exists() && tokens.exists()) {
+            ModelFiles(model.absolutePath, tokens.absolutePath)
+        } else null
+    }
+
+    fun hasCustomArabicModel(): Boolean {
+        return File(modelsDir, CUSTOM_AR_MODEL).exists() &&
+                File(modelsDir, CUSTOM_AR_CONFIG).exists()
+    }
+
+    /**
+     * Imports a custom Arabic voice from user-provided .onnx and .onnx.json files.
+     * Copies both files to the models directory, generates tokens, and injects metadata.
+     */
+    suspend fun importCustomArabicModel(
+        onnxUri: Uri,
+        configUri: Uri
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            modelsDir.mkdirs()
+
+            val modelFile = File(modelsDir, CUSTOM_AR_MODEL)
+            val configFile = File(modelsDir, CUSTOM_AR_CONFIG)
+            val tokensFile = File(modelsDir, CUSTOM_AR_TOKENS)
+
+            // Clean up any previous custom model files
+            removeCustomArabicModelFiles()
+
+            // Copy .onnx model
+            context.contentResolver.openInputStream(onnxUri)?.use { input ->
+                FileOutputStream(modelFile).use { output ->
+                    input.copyTo(output)
+                }
+            } ?: throw Exception("Could not read ONNX model file")
+
+            // Copy .onnx.json config
+            context.contentResolver.openInputStream(configUri)?.use { input ->
+                FileOutputStream(configFile).use { output ->
+                    input.copyTo(output)
+                }
+            } ?: throw Exception("Could not read config JSON file")
+
+            // Validate config has required fields
+            val json = JSONObject(configFile.readText())
+            if (!json.has("phoneme_id_map")) {
+                removeCustomArabicModelFiles()
+                throw Exception("Config JSON missing 'phoneme_id_map' field")
+            }
+            if (!json.has("audio") || !json.getJSONObject("audio").has("sample_rate")) {
+                removeCustomArabicModelFiles()
+                throw Exception("Config JSON missing 'audio.sample_rate' field")
+            }
+
+            // Generate tokens file from config
+            generateTokensFile(configFile, tokensFile)
+
+            // Inject ONNX metadata
+            injectOnnxMetadata(modelFile, configFile)
+
+            Log.i(TAG, "Custom Arabic model imported successfully: ${modelFile.length()} bytes")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to import custom Arabic model", e)
+            removeCustomArabicModelFiles()
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Removes the custom Arabic voice model files, reverting to the default Kareem voice.
+     */
+    fun removeCustomArabicModelFiles() {
+        File(modelsDir, CUSTOM_AR_MODEL).delete()
+        File(modelsDir, CUSTOM_AR_CONFIG).delete()
+        File(modelsDir, CUSTOM_AR_TOKENS).delete()
+        File(modelsDir, "${CUSTOM_AR_MODEL}.patched_v3").delete()
+        File(modelsDir, "${CUSTOM_AR_MODEL}.inject_log").delete()
     }
 
     fun areModelsReady(): Boolean {
@@ -225,6 +316,14 @@ class ModelManager(private val context: Context) {
             enTokens.delete()
             generateTokensFile(enConfig, enTokens)
         }
+
+        // Custom Arabic model
+        val customArConfig = File(modelsDir, CUSTOM_AR_CONFIG)
+        val customArTokens = File(modelsDir, CUSTOM_AR_TOKENS)
+        if (customArConfig.exists()) {
+            customArTokens.delete()
+            generateTokensFile(customArConfig, customArTokens)
+        }
     }
 
     /**
@@ -243,6 +342,11 @@ class ModelManager(private val context: Context) {
         injectOnnxMetadata(
             File(modelsDir, "en_US-amy-low.onnx"),
             File(modelsDir, "en_US-amy-low.onnx.json")
+        )
+        // Custom Arabic model
+        injectOnnxMetadata(
+            File(modelsDir, CUSTOM_AR_MODEL),
+            File(modelsDir, CUSTOM_AR_CONFIG)
         )
     }
 

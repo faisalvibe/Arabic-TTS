@@ -1,9 +1,11 @@
 package com.arabictts.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.arabictts.app.databinding.ActivityMainBinding
@@ -17,6 +19,29 @@ class MainActivity : AppCompatActivity() {
     private lateinit var modelManager: ModelManager
     private val ttsEngine = TTSEngine()
     private var isSpeaking = false
+    private var pendingOnnxUri: Uri? = null
+
+    // Step 1: Pick the .onnx model file
+    private val pickOnnxFile = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            pendingOnnxUri = uri
+            Toast.makeText(this, getString(R.string.pick_config_file), Toast.LENGTH_LONG).show()
+            pickConfigFile.launch(arrayOf("application/json", "application/octet-stream", "*/*"))
+        }
+    }
+
+    // Step 2: Pick the .onnx.json config file
+    private val pickConfigFile = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val onnxUri = pendingOnnxUri
+        if (uri != null && onnxUri != null) {
+            importCustomVoice(onnxUri, uri)
+        }
+        pendingOnnxUri = null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,6 +103,18 @@ class MainActivity : AppCompatActivity() {
         binding.chipMixed.setOnClickListener {
             binding.etInput.setText("مرحباً Hello كيف حالك How are you")
         }
+
+        // Custom voice buttons
+        binding.btnImportVoice.setOnClickListener {
+            Toast.makeText(this, getString(R.string.pick_onnx_file), Toast.LENGTH_LONG).show()
+            pickOnnxFile.launch(arrayOf("application/octet-stream", "*/*"))
+        }
+
+        binding.btnRemoveVoice.setOnClickListener {
+            modelManager.removeCustomArabicModelFiles()
+            updateCustomVoiceStatus()
+            reinitArabicTTS()
+        }
     }
 
     private fun checkModels() {
@@ -138,7 +175,9 @@ class MainActivity : AppCompatActivity() {
         ttsEngine.breadcrumbFile = breadcrumbFile
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val arModel = modelManager.getArabicModelFiles()
+            // Use custom Arabic model if available, otherwise default
+            val arModel = modelManager.getCustomArabicModelFiles()
+                ?: modelManager.getArabicModelFiles()
             val enModel = modelManager.getEnglishModelFiles()
             val espeakData = modelManager.getEspeakDataDir()
 
@@ -167,6 +206,7 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 if (arResult.success && enResult.success) {
                     showReady()
+                    updateCustomVoiceStatus()
                     binding.tvStatus.text = "Ready! / !جاهز"
                 } else {
                     val errors = listOfNotNull(
@@ -174,6 +214,62 @@ class MainActivity : AppCompatActivity() {
                         enResult.error?.let { "English: $it" }
                     ).joinToString("\n")
                     binding.tvStatus.text = "Init failed:\n$errors"
+                }
+            }
+        }
+    }
+
+    private fun importCustomVoice(onnxUri: Uri, configUri: Uri) {
+        binding.tvStatus.text = "Importing custom voice..."
+        binding.btnImportVoice.isEnabled = false
+
+        lifecycleScope.launch {
+            val result = modelManager.importCustomArabicModel(onnxUri, configUri)
+            withContext(Dispatchers.Main) {
+                binding.btnImportVoice.isEnabled = true
+                if (result.isSuccess) {
+                    binding.tvStatus.text = "Custom voice imported! Reinitializing..."
+                    updateCustomVoiceStatus()
+                    reinitArabicTTS()
+                } else {
+                    val error = result.exceptionOrNull()?.message ?: "Unknown error"
+                    binding.tvStatus.text = "Import failed: $error"
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Import failed: $error",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun updateCustomVoiceStatus() {
+        if (modelManager.hasCustomArabicModel()) {
+            binding.tvCustomVoiceStatus.text = getString(R.string.custom_voice_active)
+            binding.btnRemoveVoice.visibility = View.VISIBLE
+        } else {
+            binding.tvCustomVoiceStatus.text = getString(R.string.custom_voice_none)
+            binding.btnRemoveVoice.visibility = View.GONE
+        }
+    }
+
+    private fun reinitArabicTTS() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val espeakData = modelManager.getEspeakDataDir() ?: return@launch
+
+            // Use custom model if available, otherwise default
+            val arModel = modelManager.getCustomArabicModelFiles()
+                ?: modelManager.getArabicModelFiles()
+                ?: return@launch
+
+            val arResult = ttsEngine.initArabic(arModel.modelPath, arModel.tokensPath, espeakData)
+
+            withContext(Dispatchers.Main) {
+                if (arResult.success) {
+                    binding.tvStatus.text = "Ready! / !جاهز"
+                } else {
+                    binding.tvStatus.text = "Arabic init failed: ${arResult.error}"
                 }
             }
         }

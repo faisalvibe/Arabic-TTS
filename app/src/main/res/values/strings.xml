@@ -9,4 +9,11 @@
     <string name="stop">Stop</string>
     <string name="speed">Speed:</string>
     <string name="try_samples">Try a sample:</string>
+    <string name="custom_voice_title">Arabic Voice / الصوت العربي</string>
+    <string name="custom_voice_none">Default: Kareem (Jordanian) / الافتراضي: كريم</string>
+    <string name="custom_voice_active">Custom voice loaded / تم تحميل صوت مخصص</string>
+    <string name="import_voice">Import Voice / استيراد صوت</string>
+    <string name="remove_voice">Remove / إزالة</string>
+    <string name="pick_onnx_file">Select your .onnx model file</string>
+    <string name="pick_config_file">Now select the .onnx.json config file</string>
 </resources>
