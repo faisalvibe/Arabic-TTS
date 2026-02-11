@@ -168,7 +168,9 @@ class ModelManager(private val context: Context) {
         ensureTokenFiles()
         // Inject required ONNX metadata into Piper models (sherpa-onnx exits if missing)
         ensureOnnxMetadata()
-        return getArabicModelFiles() != null &&
+        // Accept custom Arabic voice as a valid alternative to the default model
+        val hasArabic = getCustomArabicModelFiles() != null || getArabicModelFiles() != null
+        return hasArabic &&
                 getEnglishModelFiles() != null &&
                 getEspeakDataDir() != null
     }
