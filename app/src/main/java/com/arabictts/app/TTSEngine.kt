@@ -41,6 +41,9 @@ class TTSEngine {
     fun initArabic(modelPath: String, tokensPath: String, espeakDataDir: String): InitResult {
         return try {
             Log.i(TAG, "Initializing Arabic TTS: model=$modelPath, tokens=$tokensPath, espeak=$espeakDataDir")
+            // Release previous instance so native resources are freed before loading new model
+            arabicTts?.release()
+            arabicTts = null
             val vitsConfig = OfflineTtsVitsModelConfig(
                 model = modelPath,
                 tokens = tokensPath,
@@ -72,6 +75,8 @@ class TTSEngine {
     fun initEnglish(modelPath: String, tokensPath: String, espeakDataDir: String): InitResult {
         return try {
             Log.i(TAG, "Initializing English TTS: model=$modelPath, tokens=$tokensPath, espeak=$espeakDataDir")
+            englishTts?.release()
+            englishTts = null
             val vitsConfig = OfflineTtsVitsModelConfig(
                 model = modelPath,
                 tokens = tokensPath,

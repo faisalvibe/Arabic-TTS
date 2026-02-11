@@ -78,6 +78,23 @@ class MainActivity : AppCompatActivity() {
         binding.chipMixed.setOnClickListener {
             binding.etInput.setText("مرحباً Hello كيف حالك How are you")
         }
+
+        // Custom voice: download from URLs
+        binding.btnImportVoice.setOnClickListener {
+            val onnxUrl = binding.etOnnxUrl.text.toString().trim()
+            val configUrl = binding.etConfigUrl.text.toString().trim()
+            if (onnxUrl.isEmpty() || configUrl.isEmpty()) {
+                Toast.makeText(this, getString(R.string.error_empty_urls), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            downloadCustomVoice(onnxUrl, configUrl)
+        }
+
+        binding.btnRemoveVoice.setOnClickListener {
+            modelManager.removeCustomEnglishModelFiles()
+            updateCustomVoiceStatus()
+            reinitEnglishTTS()
+        }
     }
 
     private fun checkModels() {
@@ -138,8 +155,12 @@ class MainActivity : AppCompatActivity() {
         ttsEngine.breadcrumbFile = breadcrumbFile
 
         lifecycleScope.launch(Dispatchers.IO) {
+            // Arabic always uses default Kareem voice
             val arModel = modelManager.getArabicModelFiles()
-            val enModel = modelManager.getEnglishModelFiles()
+            // English uses custom voice if available, otherwise default Amy
+            val isCustomEnglish = modelManager.getCustomEnglishModelFiles() != null
+            val enModel = modelManager.getCustomEnglishModelFiles()
+                ?: modelManager.getEnglishModelFiles()
             val espeakData = modelManager.getEspeakDataDir()
 
             if (arModel == null || enModel == null || espeakData == null) {
@@ -150,8 +171,17 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
 
+            val enModelName = java.io.File(enModel.modelPath).name
+            breadcrumbFile.appendText("Arabic model: ar_JO-kareem-low.onnx (default)\n")
+            breadcrumbFile.appendText("English model: $enModelName (custom=$isCustomEnglish)\n")
+            breadcrumbFile.appendText("English path: ${enModel.modelPath}\n")
+            breadcrumbFile.appendText("English tokens: ${enModel.tokensPath}\n")
+
             val arResult = ttsEngine.initArabic(arModel.modelPath, arModel.tokensPath, espeakData)
             val enResult = ttsEngine.initEnglish(enModel.modelPath, enModel.tokensPath, espeakData)
+
+            breadcrumbFile.appendText("Arabic init: ${if (arResult.success) "OK" else "FAIL: ${arResult.error}"}\n")
+            breadcrumbFile.appendText("English init: ${if (enResult.success) "OK" else "FAIL: ${enResult.error}"}\n")
 
             if (arResult.success && enResult.success) {
                 // Test generate with simple text to verify native inference works
@@ -167,7 +197,9 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 if (arResult.success && enResult.success) {
                     showReady()
-                    binding.tvStatus.text = "Ready! / !جاهز"
+                    updateCustomVoiceStatus()
+                    val enLabel = if (isCustomEnglish) "Custom" else "Amy"
+                    binding.tvStatus.text = "Ready - AR: Kareem | EN: $enLabel"
                 } else {
                     val errors = listOfNotNull(
                         arResult.error?.let { "Arabic: $it" },
@@ -179,8 +211,89 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun downloadCustomVoice(onnxUrl: String, configUrl: String) {
+        binding.tvStatus.text = getString(R.string.downloading_voice)
+        binding.btnImportVoice.isEnabled = false
+
+        lifecycleScope.launch {
+            val result = modelManager.importCustomEnglishModelFromUrls(onnxUrl, configUrl) { status ->
+                launch(Dispatchers.Main) {
+                    binding.tvStatus.text = status
+                }
+            }
+            withContext(Dispatchers.Main) {
+                binding.btnImportVoice.isEnabled = true
+                if (result.isSuccess) {
+                    binding.tvStatus.text = "Custom voice downloaded! Reinitializing..."
+                    binding.etOnnxUrl.text?.clear()
+                    binding.etConfigUrl.text?.clear()
+                    updateCustomVoiceStatus()
+                    reinitEnglishTTS()
+                } else {
+                    val error = result.exceptionOrNull()?.message ?: "Unknown error"
+                    binding.tvStatus.text = "Download failed: $error"
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Download failed: $error",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun updateCustomVoiceStatus() {
+        if (modelManager.hasCustomEnglishModel()) {
+            binding.tvCustomVoiceStatus.text = getString(R.string.custom_voice_active)
+            binding.btnRemoveVoice.visibility = View.VISIBLE
+        } else {
+            binding.tvCustomVoiceStatus.text = getString(R.string.custom_voice_none)
+            binding.btnRemoveVoice.visibility = View.GONE
+        }
+    }
+
+    private fun reinitEnglishTTS() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val espeakData = modelManager.getEspeakDataDir()
+            if (espeakData == null) {
+                withContext(Dispatchers.Main) {
+                    binding.tvStatus.text = "Reinit failed: espeak data not found"
+                }
+                return@launch
+            }
+
+            // Use custom model if available, otherwise default Amy
+            val isCustom = modelManager.getCustomEnglishModelFiles() != null
+            val enModel = modelManager.getCustomEnglishModelFiles()
+                ?: modelManager.getEnglishModelFiles()
+            if (enModel == null) {
+                withContext(Dispatchers.Main) {
+                    binding.tvStatus.text = "Reinit failed: no English model found"
+                }
+                return@launch
+            }
+
+            val modelName = java.io.File(enModel.modelPath).name
+            withContext(Dispatchers.Main) {
+                binding.tvStatus.text = "Loading: $modelName..."
+            }
+
+            val enResult = ttsEngine.initEnglish(enModel.modelPath, enModel.tokensPath, espeakData)
+
+            withContext(Dispatchers.Main) {
+                if (enResult.success) {
+                    val enLabel = if (isCustom) "Custom" else "Amy"
+                    binding.tvStatus.text = "Ready - AR: Kareem | EN: $enLabel"
+                } else {
+                    binding.tvStatus.text = "English init failed: ${enResult.error}\nModel: $modelName"
+                }
+            }
+        }
+    }
+
     private fun speak(text: String) {
         val speed = binding.sliderSpeed.value
+        val isCustomEnglish = modelManager.hasCustomEnglishModel()
 
         isSpeaking = true
         binding.btnSpeak.text = "⏳"
@@ -194,11 +307,14 @@ class MainActivity : AppCompatActivity() {
                     speed = speed,
                     onSegmentStart = { segment ->
                         launch(Dispatchers.Main) {
-                            val langLabel = when (segment.language) {
-                                LanguageDetector.Language.ARABIC -> "🟢 Arabic"
-                                LanguageDetector.Language.ENGLISH -> "🔵 English"
+                            val voiceLabel = when (segment.language) {
+                                LanguageDetector.Language.ARABIC -> "🟢 Arabic (Kareem)"
+                                LanguageDetector.Language.ENGLISH -> {
+                                    val voiceName = if (isCustomEnglish) "Custom" else "Amy"
+                                    "🔵 English ($voiceName)"
+                                }
                             }
-                            binding.tvStatus.text = "$langLabel: ${segment.text.take(50)}"
+                            binding.tvStatus.text = "$voiceLabel: ${segment.text.take(50)}"
                         }
                     }
                 )
@@ -212,7 +328,8 @@ class MainActivity : AppCompatActivity() {
                     binding.btnSpeak.text = getString(R.string.speak)
                     binding.btnSpeak.isEnabled = true
                     binding.btnStop.visibility = View.GONE
-                    binding.tvStatus.text = "Ready! / !جاهز"
+                    val enLabel = if (isCustomEnglish) "Custom" else "Amy"
+                    binding.tvStatus.text = "Ready - AR: Kareem | EN: $enLabel"
                 }
             }
         }

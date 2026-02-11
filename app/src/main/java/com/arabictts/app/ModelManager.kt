@@ -1,6 +1,7 @@
 package com.arabictts.app
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -34,6 +35,16 @@ class ModelManager(private val context: Context) {
 
         // Data tokens file needed by Piper
         private const val ESPEAK_DATA_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2"
+
+        // Custom English voice model filenames
+        private const val CUSTOM_EN_MODEL = "custom_en.onnx"
+        private const val CUSTOM_EN_CONFIG = "custom_en.onnx.json"
+        private const val CUSTOM_EN_TOKENS = "custom_en-tokens.txt"
+
+        // Legacy custom Arabic filenames (for cleanup)
+        private const val LEGACY_CUSTOM_AR_MODEL = "custom_ar.onnx"
+        private const val LEGACY_CUSTOM_AR_CONFIG = "custom_ar.onnx.json"
+        private const val LEGACY_CUSTOM_AR_TOKENS = "custom_ar-tokens.txt"
     }
 
     data class ModelFiles(
@@ -72,13 +83,163 @@ class ModelManager(private val context: Context) {
         } else null
     }
 
+    /**
+     * Returns custom English model files if imported, otherwise null.
+     */
+    fun getCustomEnglishModelFiles(): ModelFiles? {
+        val model = File(modelsDir, CUSTOM_EN_MODEL)
+        val tokens = File(modelsDir, CUSTOM_EN_TOKENS)
+        return if (model.exists() && tokens.exists()) {
+            ModelFiles(model.absolutePath, tokens.absolutePath)
+        } else null
+    }
+
+    fun hasCustomEnglishModel(): Boolean {
+        return File(modelsDir, CUSTOM_EN_MODEL).exists() &&
+                File(modelsDir, CUSTOM_EN_CONFIG).exists()
+    }
+
+    /**
+     * Imports a custom English voice from user-provided .onnx and .onnx.json files.
+     * Copies both files to the models directory, generates tokens, and injects metadata.
+     */
+    suspend fun importCustomEnglishModel(
+        onnxUri: Uri,
+        configUri: Uri
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            modelsDir.mkdirs()
+
+            val modelFile = File(modelsDir, CUSTOM_EN_MODEL)
+            val configFile = File(modelsDir, CUSTOM_EN_CONFIG)
+            val tokensFile = File(modelsDir, CUSTOM_EN_TOKENS)
+
+            // Clean up any previous custom model files
+            removeCustomEnglishModelFiles()
+
+            // Copy .onnx model
+            context.contentResolver.openInputStream(onnxUri)?.use { input ->
+                FileOutputStream(modelFile).use { output ->
+                    input.copyTo(output)
+                }
+            } ?: throw Exception("Could not read ONNX model file")
+
+            // Copy .onnx.json config
+            context.contentResolver.openInputStream(configUri)?.use { input ->
+                FileOutputStream(configFile).use { output ->
+                    input.copyTo(output)
+                }
+            } ?: throw Exception("Could not read config JSON file")
+
+            // Validate config has required fields
+            val json = JSONObject(configFile.readText())
+            if (!json.has("phoneme_id_map")) {
+                removeCustomEnglishModelFiles()
+                throw Exception("Config JSON missing 'phoneme_id_map' field")
+            }
+            if (!json.has("audio") || !json.getJSONObject("audio").has("sample_rate")) {
+                removeCustomEnglishModelFiles()
+                throw Exception("Config JSON missing 'audio.sample_rate' field")
+            }
+
+            // Generate tokens file from config
+            generateTokensFile(configFile, tokensFile)
+
+            // Inject ONNX metadata
+            injectOnnxMetadata(modelFile, configFile)
+
+            Log.i(TAG, "Custom English model imported successfully: ${modelFile.length()} bytes")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to import custom English model", e)
+            removeCustomEnglishModelFiles()
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Downloads a custom English voice from URLs and imports it.
+     */
+    suspend fun importCustomEnglishModelFromUrls(
+        onnxUrl: String,
+        configUrl: String,
+        onProgress: (String) -> Unit = {}
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            modelsDir.mkdirs()
+
+            val modelFile = File(modelsDir, CUSTOM_EN_MODEL)
+            val configFile = File(modelsDir, CUSTOM_EN_CONFIG)
+            val tokensFile = File(modelsDir, CUSTOM_EN_TOKENS)
+
+            removeCustomEnglishModelFiles()
+
+            onProgress("Downloading .onnx model...")
+            downloadFile(onnxUrl, modelFile, "Custom voice model") { _, _ -> }
+
+            onProgress("Downloading .onnx.json config...")
+            downloadFile(configUrl, configFile, "Custom voice config") { _, _ -> }
+
+            // Validate config
+            val json = JSONObject(configFile.readText())
+            if (!json.has("phoneme_id_map")) {
+                removeCustomEnglishModelFiles()
+                throw Exception("Config JSON missing 'phoneme_id_map' field")
+            }
+            if (!json.has("audio") || !json.getJSONObject("audio").has("sample_rate")) {
+                removeCustomEnglishModelFiles()
+                throw Exception("Config JSON missing 'audio.sample_rate' field")
+            }
+
+            onProgress("Processing voice files...")
+            generateTokensFile(configFile, tokensFile)
+            injectOnnxMetadata(modelFile, configFile)
+
+            Log.i(TAG, "Custom English model downloaded from URL: ${modelFile.length()} bytes")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to download custom English model from URL", e)
+            removeCustomEnglishModelFiles()
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Removes the custom English voice model files, reverting to the default Amy voice.
+     */
+    fun removeCustomEnglishModelFiles() {
+        File(modelsDir, CUSTOM_EN_MODEL).delete()
+        File(modelsDir, CUSTOM_EN_CONFIG).delete()
+        File(modelsDir, CUSTOM_EN_TOKENS).delete()
+        File(modelsDir, "${CUSTOM_EN_MODEL}.patched_v3").delete()
+        File(modelsDir, "${CUSTOM_EN_MODEL}.inject_log").delete()
+        // Also clean up legacy custom_ar files from previous versions
+        removeLegacyCustomFiles()
+    }
+
+    /**
+     * Removes legacy custom_ar.* files from before the fix that moved
+     * custom voices from the Arabic slot to the English slot.
+     */
+    fun removeLegacyCustomFiles() {
+        File(modelsDir, LEGACY_CUSTOM_AR_MODEL).delete()
+        File(modelsDir, LEGACY_CUSTOM_AR_CONFIG).delete()
+        File(modelsDir, LEGACY_CUSTOM_AR_TOKENS).delete()
+        File(modelsDir, "${LEGACY_CUSTOM_AR_MODEL}.patched_v3").delete()
+        File(modelsDir, "${LEGACY_CUSTOM_AR_MODEL}.inject_log").delete()
+    }
+
     fun areModelsReady(): Boolean {
+        // Clean up legacy custom_ar files from before the English slot fix
+        removeLegacyCustomFiles()
         // Always regenerate tokens.txt to fix any broken format from older versions
         ensureTokenFiles()
         // Inject required ONNX metadata into Piper models (sherpa-onnx exits if missing)
         ensureOnnxMetadata()
+        // Arabic is always default Kareem; English can be custom or default Amy
+        val hasEnglish = getCustomEnglishModelFiles() != null || getEnglishModelFiles() != null
         return getArabicModelFiles() != null &&
-                getEnglishModelFiles() != null &&
+                hasEnglish &&
                 getEspeakDataDir() != null
     }
 
@@ -225,6 +386,14 @@ class ModelManager(private val context: Context) {
             enTokens.delete()
             generateTokensFile(enConfig, enTokens)
         }
+
+        // Custom English model
+        val customEnConfig = File(modelsDir, CUSTOM_EN_CONFIG)
+        val customEnTokens = File(modelsDir, CUSTOM_EN_TOKENS)
+        if (customEnConfig.exists()) {
+            customEnTokens.delete()
+            generateTokensFile(customEnConfig, customEnTokens)
+        }
     }
 
     /**
@@ -243,6 +412,11 @@ class ModelManager(private val context: Context) {
         injectOnnxMetadata(
             File(modelsDir, "en_US-amy-low.onnx"),
             File(modelsDir, "en_US-amy-low.onnx.json")
+        )
+        // Custom English model
+        injectOnnxMetadata(
+            File(modelsDir, CUSTOM_EN_MODEL),
+            File(modelsDir, CUSTOM_EN_CONFIG)
         )
     }
 
