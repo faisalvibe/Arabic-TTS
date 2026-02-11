@@ -176,6 +176,7 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch(Dispatchers.IO) {
             // Use custom Arabic model if available, otherwise default
+            val isCustom = modelManager.getCustomArabicModelFiles() != null
             val arModel = modelManager.getCustomArabicModelFiles()
                 ?: modelManager.getArabicModelFiles()
             val enModel = modelManager.getEnglishModelFiles()
@@ -189,8 +190,16 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
 
+            val arModelName = java.io.File(arModel.modelPath).name
+            breadcrumbFile.appendText("Arabic model: $arModelName (custom=$isCustom)\n")
+            breadcrumbFile.appendText("Arabic path: ${arModel.modelPath}\n")
+            breadcrumbFile.appendText("Arabic tokens: ${arModel.tokensPath}\n")
+
             val arResult = ttsEngine.initArabic(arModel.modelPath, arModel.tokensPath, espeakData)
             val enResult = ttsEngine.initEnglish(enModel.modelPath, enModel.tokensPath, espeakData)
+
+            breadcrumbFile.appendText("Arabic init: ${if (arResult.success) "OK" else "FAIL: ${arResult.error}"}\n")
+            breadcrumbFile.appendText("English init: ${if (enResult.success) "OK" else "FAIL: ${enResult.error}"}\n")
 
             if (arResult.success && enResult.success) {
                 // Test generate with simple text to verify native inference works
@@ -207,7 +216,8 @@ class MainActivity : AppCompatActivity() {
                 if (arResult.success && enResult.success) {
                     showReady()
                     updateCustomVoiceStatus()
-                    binding.tvStatus.text = "Ready! / !جاهز"
+                    val label = if (isCustom) "custom" else "default"
+                    binding.tvStatus.text = "Ready ($label: $arModelName)"
                 } else {
                     val errors = listOfNotNull(
                         arResult.error?.let { "Arabic: $it" },
@@ -256,20 +266,38 @@ class MainActivity : AppCompatActivity() {
 
     private fun reinitArabicTTS() {
         lifecycleScope.launch(Dispatchers.IO) {
-            val espeakData = modelManager.getEspeakDataDir() ?: return@launch
+            val espeakData = modelManager.getEspeakDataDir()
+            if (espeakData == null) {
+                withContext(Dispatchers.Main) {
+                    binding.tvStatus.text = "Reinit failed: espeak data not found"
+                }
+                return@launch
+            }
 
             // Use custom model if available, otherwise default
+            val isCustom = modelManager.getCustomArabicModelFiles() != null
             val arModel = modelManager.getCustomArabicModelFiles()
                 ?: modelManager.getArabicModelFiles()
-                ?: return@launch
+            if (arModel == null) {
+                withContext(Dispatchers.Main) {
+                    binding.tvStatus.text = "Reinit failed: no Arabic model found"
+                }
+                return@launch
+            }
+
+            val modelName = java.io.File(arModel.modelPath).name
+            withContext(Dispatchers.Main) {
+                binding.tvStatus.text = "Loading: $modelName..."
+            }
 
             val arResult = ttsEngine.initArabic(arModel.modelPath, arModel.tokensPath, espeakData)
 
             withContext(Dispatchers.Main) {
                 if (arResult.success) {
-                    binding.tvStatus.text = "Ready! / !جاهز"
+                    val label = if (isCustom) "custom" else "default"
+                    binding.tvStatus.text = "Ready ($label: $modelName)"
                 } else {
-                    binding.tvStatus.text = "Arabic init failed: ${arResult.error}"
+                    binding.tvStatus.text = "Arabic init failed: ${arResult.error}\nModel: $modelName"
                 }
             }
         }

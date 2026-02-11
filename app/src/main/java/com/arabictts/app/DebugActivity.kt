@@ -162,10 +162,41 @@ class DebugActivity : AppCompatActivity() {
             appendLine("NOT FOUND")
         }
 
+        // Custom voice status
+        appendLine()
+        appendLine("--- Custom Voice Status ---")
+        val customModel = modelsDir?.let { File(it, "custom_ar.onnx") }
+        val customConfig = modelsDir?.let { File(it, "custom_ar.onnx.json") }
+        val customTokens = modelsDir?.let { File(it, "custom_ar-tokens.txt") }
+        val customPatch = modelsDir?.let { File(it, "custom_ar.onnx.patched_v3") }
+        val customLog = modelsDir?.let { File(it, "custom_ar.onnx.inject_log") }
+        appendLine("custom_ar.onnx: ${if (customModel?.exists() == true) "${customModel.length()} bytes" else "NOT FOUND"}")
+        appendLine("custom_ar.onnx.json: ${if (customConfig?.exists() == true) "${customConfig.length()} bytes" else "NOT FOUND"}")
+        appendLine("custom_ar-tokens.txt: ${if (customTokens?.exists() == true) "${customTokens.length()} bytes, ${customTokens.readLines().size} lines" else "NOT FOUND"}")
+        appendLine("custom_ar.onnx.patched_v3: ${customPatch?.exists()}")
+        if (customConfig?.exists() == true) {
+            try {
+                val json = org.json.JSONObject(customConfig.readText())
+                appendLine("  audio.sample_rate: ${json.optJSONObject("audio")?.optInt("sample_rate")}")
+                appendLine("  espeak.voice: ${json.optJSONObject("espeak")?.optString("voice")}")
+                appendLine("  num_speakers: ${json.optInt("num_speakers")}")
+                val phonemeMap = json.optJSONObject("phoneme_id_map")
+                appendLine("  phoneme_id_map keys: ${phonemeMap?.length() ?: "null"}")
+            } catch (e: Exception) {
+                appendLine("  Config parse error: ${e.message}")
+            }
+        }
+        if (customLog?.exists() == true) {
+            appendLine("  inject_log: ${customLog.readText().take(500)}")
+        }
+        val defaultModel = modelsDir?.let { File(it, "ar_JO-kareem-low.onnx") }
+        appendLine()
+        appendLine("Active Arabic voice: ${if (customModel?.exists() == true && customTokens?.exists() == true) "CUSTOM (custom_ar.onnx)" else if (defaultModel?.exists() == true) "DEFAULT (ar_JO-kareem-low.onnx)" else "NONE"}")
+
         // Show tokens.txt content preview (with hex dump for debugging format issues)
         appendLine()
         appendLine("--- tokens.txt Preview ---")
-        for (name in listOf("ar_JO-kareem-low-tokens.txt", "en_US-amy-low-tokens.txt")) {
+        for (name in listOf("ar_JO-kareem-low-tokens.txt", "en_US-amy-low-tokens.txt", "custom_ar-tokens.txt")) {
             val f = modelsDir?.let { File(it, name) }
             appendLine("[$name]")
             if (f?.exists() == true) {
@@ -189,7 +220,7 @@ class DebugActivity : AppCompatActivity() {
         // Show JSON config preview
         appendLine()
         appendLine("--- Model Config Preview ---")
-        for (name in listOf("ar_JO-kareem-low.onnx.json", "en_US-amy-low.onnx.json")) {
+        for (name in listOf("ar_JO-kareem-low.onnx.json", "en_US-amy-low.onnx.json", "custom_ar.onnx.json")) {
             val f = modelsDir?.let { File(it, name) }
             appendLine("[$name]")
             if (f?.exists() == true) {
@@ -215,7 +246,7 @@ class DebugActivity : AppCompatActivity() {
         // Show ONNX metadata injection status
         appendLine()
         appendLine("--- ONNX Metadata Patch Status ---")
-        for (name in listOf("ar_JO-kareem-low.onnx", "en_US-amy-low.onnx")) {
+        for (name in listOf("ar_JO-kareem-low.onnx", "en_US-amy-low.onnx", "custom_ar.onnx")) {
             appendLine("[$name]")
             val onnxFile = modelsDir?.let { File(it, name) }
             val patchedFile = modelsDir?.let { File(it, "$name.patched_v3") }
