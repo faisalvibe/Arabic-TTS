@@ -36,10 +36,15 @@ class ModelManager(private val context: Context) {
         // Data tokens file needed by Piper
         private const val ESPEAK_DATA_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2"
 
-        // Custom Arabic voice model filenames
-        private const val CUSTOM_AR_MODEL = "custom_ar.onnx"
-        private const val CUSTOM_AR_CONFIG = "custom_ar.onnx.json"
-        private const val CUSTOM_AR_TOKENS = "custom_ar-tokens.txt"
+        // Custom English voice model filenames
+        private const val CUSTOM_EN_MODEL = "custom_en.onnx"
+        private const val CUSTOM_EN_CONFIG = "custom_en.onnx.json"
+        private const val CUSTOM_EN_TOKENS = "custom_en-tokens.txt"
+
+        // Legacy custom Arabic filenames (for cleanup)
+        private const val LEGACY_CUSTOM_AR_MODEL = "custom_ar.onnx"
+        private const val LEGACY_CUSTOM_AR_CONFIG = "custom_ar.onnx.json"
+        private const val LEGACY_CUSTOM_AR_TOKENS = "custom_ar-tokens.txt"
     }
 
     data class ModelFiles(
@@ -79,38 +84,38 @@ class ModelManager(private val context: Context) {
     }
 
     /**
-     * Returns custom Arabic model files if imported, otherwise null.
+     * Returns custom English model files if imported, otherwise null.
      */
-    fun getCustomArabicModelFiles(): ModelFiles? {
-        val model = File(modelsDir, CUSTOM_AR_MODEL)
-        val tokens = File(modelsDir, CUSTOM_AR_TOKENS)
+    fun getCustomEnglishModelFiles(): ModelFiles? {
+        val model = File(modelsDir, CUSTOM_EN_MODEL)
+        val tokens = File(modelsDir, CUSTOM_EN_TOKENS)
         return if (model.exists() && tokens.exists()) {
             ModelFiles(model.absolutePath, tokens.absolutePath)
         } else null
     }
 
-    fun hasCustomArabicModel(): Boolean {
-        return File(modelsDir, CUSTOM_AR_MODEL).exists() &&
-                File(modelsDir, CUSTOM_AR_CONFIG).exists()
+    fun hasCustomEnglishModel(): Boolean {
+        return File(modelsDir, CUSTOM_EN_MODEL).exists() &&
+                File(modelsDir, CUSTOM_EN_CONFIG).exists()
     }
 
     /**
-     * Imports a custom Arabic voice from user-provided .onnx and .onnx.json files.
+     * Imports a custom English voice from user-provided .onnx and .onnx.json files.
      * Copies both files to the models directory, generates tokens, and injects metadata.
      */
-    suspend fun importCustomArabicModel(
+    suspend fun importCustomEnglishModel(
         onnxUri: Uri,
         configUri: Uri
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             modelsDir.mkdirs()
 
-            val modelFile = File(modelsDir, CUSTOM_AR_MODEL)
-            val configFile = File(modelsDir, CUSTOM_AR_CONFIG)
-            val tokensFile = File(modelsDir, CUSTOM_AR_TOKENS)
+            val modelFile = File(modelsDir, CUSTOM_EN_MODEL)
+            val configFile = File(modelsDir, CUSTOM_EN_CONFIG)
+            val tokensFile = File(modelsDir, CUSTOM_EN_TOKENS)
 
             // Clean up any previous custom model files
-            removeCustomArabicModelFiles()
+            removeCustomEnglishModelFiles()
 
             // Copy .onnx model
             context.contentResolver.openInputStream(onnxUri)?.use { input ->
@@ -129,11 +134,11 @@ class ModelManager(private val context: Context) {
             // Validate config has required fields
             val json = JSONObject(configFile.readText())
             if (!json.has("phoneme_id_map")) {
-                removeCustomArabicModelFiles()
+                removeCustomEnglishModelFiles()
                 throw Exception("Config JSON missing 'phoneme_id_map' field")
             }
             if (!json.has("audio") || !json.getJSONObject("audio").has("sample_rate")) {
-                removeCustomArabicModelFiles()
+                removeCustomEnglishModelFiles()
                 throw Exception("Config JSON missing 'audio.sample_rate' field")
             }
 
@@ -143,35 +148,51 @@ class ModelManager(private val context: Context) {
             // Inject ONNX metadata
             injectOnnxMetadata(modelFile, configFile)
 
-            Log.i(TAG, "Custom Arabic model imported successfully: ${modelFile.length()} bytes")
+            Log.i(TAG, "Custom English model imported successfully: ${modelFile.length()} bytes")
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to import custom Arabic model", e)
-            removeCustomArabicModelFiles()
+            Log.e(TAG, "Failed to import custom English model", e)
+            removeCustomEnglishModelFiles()
             Result.failure(e)
         }
     }
 
     /**
-     * Removes the custom Arabic voice model files, reverting to the default Kareem voice.
+     * Removes the custom English voice model files, reverting to the default Amy voice.
      */
-    fun removeCustomArabicModelFiles() {
-        File(modelsDir, CUSTOM_AR_MODEL).delete()
-        File(modelsDir, CUSTOM_AR_CONFIG).delete()
-        File(modelsDir, CUSTOM_AR_TOKENS).delete()
-        File(modelsDir, "${CUSTOM_AR_MODEL}.patched_v3").delete()
-        File(modelsDir, "${CUSTOM_AR_MODEL}.inject_log").delete()
+    fun removeCustomEnglishModelFiles() {
+        File(modelsDir, CUSTOM_EN_MODEL).delete()
+        File(modelsDir, CUSTOM_EN_CONFIG).delete()
+        File(modelsDir, CUSTOM_EN_TOKENS).delete()
+        File(modelsDir, "${CUSTOM_EN_MODEL}.patched_v3").delete()
+        File(modelsDir, "${CUSTOM_EN_MODEL}.inject_log").delete()
+        // Also clean up legacy custom_ar files from previous versions
+        removeLegacyCustomFiles()
+    }
+
+    /**
+     * Removes legacy custom_ar.* files from before the fix that moved
+     * custom voices from the Arabic slot to the English slot.
+     */
+    fun removeLegacyCustomFiles() {
+        File(modelsDir, LEGACY_CUSTOM_AR_MODEL).delete()
+        File(modelsDir, LEGACY_CUSTOM_AR_CONFIG).delete()
+        File(modelsDir, LEGACY_CUSTOM_AR_TOKENS).delete()
+        File(modelsDir, "${LEGACY_CUSTOM_AR_MODEL}.patched_v3").delete()
+        File(modelsDir, "${LEGACY_CUSTOM_AR_MODEL}.inject_log").delete()
     }
 
     fun areModelsReady(): Boolean {
+        // Clean up legacy custom_ar files from before the English slot fix
+        removeLegacyCustomFiles()
         // Always regenerate tokens.txt to fix any broken format from older versions
         ensureTokenFiles()
         // Inject required ONNX metadata into Piper models (sherpa-onnx exits if missing)
         ensureOnnxMetadata()
-        // Accept custom Arabic voice as a valid alternative to the default model
-        val hasArabic = getCustomArabicModelFiles() != null || getArabicModelFiles() != null
-        return hasArabic &&
-                getEnglishModelFiles() != null &&
+        // Arabic is always default Kareem; English can be custom or default Amy
+        val hasEnglish = getCustomEnglishModelFiles() != null || getEnglishModelFiles() != null
+        return getArabicModelFiles() != null &&
+                hasEnglish &&
                 getEspeakDataDir() != null
     }
 
@@ -319,12 +340,12 @@ class ModelManager(private val context: Context) {
             generateTokensFile(enConfig, enTokens)
         }
 
-        // Custom Arabic model
-        val customArConfig = File(modelsDir, CUSTOM_AR_CONFIG)
-        val customArTokens = File(modelsDir, CUSTOM_AR_TOKENS)
-        if (customArConfig.exists()) {
-            customArTokens.delete()
-            generateTokensFile(customArConfig, customArTokens)
+        // Custom English model
+        val customEnConfig = File(modelsDir, CUSTOM_EN_CONFIG)
+        val customEnTokens = File(modelsDir, CUSTOM_EN_TOKENS)
+        if (customEnConfig.exists()) {
+            customEnTokens.delete()
+            generateTokensFile(customEnConfig, customEnTokens)
         }
     }
 
@@ -345,10 +366,10 @@ class ModelManager(private val context: Context) {
             File(modelsDir, "en_US-amy-low.onnx"),
             File(modelsDir, "en_US-amy-low.onnx.json")
         )
-        // Custom Arabic model
+        // Custom English model
         injectOnnxMetadata(
-            File(modelsDir, CUSTOM_AR_MODEL),
-            File(modelsDir, CUSTOM_AR_CONFIG)
+            File(modelsDir, CUSTOM_EN_MODEL),
+            File(modelsDir, CUSTOM_EN_CONFIG)
         )
     }
 
