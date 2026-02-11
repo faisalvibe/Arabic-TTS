@@ -12,8 +12,10 @@
     <string name="custom_voice_title">Arabic Voice / الصوت العربي</string>
     <string name="custom_voice_none">Default: Kareem (Jordanian) / الافتراضي: كريم</string>
     <string name="custom_voice_active">Custom voice loaded / تم تحميل صوت مخصص</string>
-    <string name="import_voice">Import Voice / استيراد صوت</string>
+    <string name="download_voice">Download Voice / تحميل صوت</string>
     <string name="remove_voice">Remove / إزالة</string>
-    <string name="pick_onnx_file">Select your .onnx model file</string>
-    <string name="pick_config_file">Now select the .onnx.json config file</string>
+    <string name="hint_onnx_url">.onnx model URL</string>
+    <string name="hint_config_url">.onnx.json config URL</string>
+    <string name="error_empty_urls">Please paste both .onnx and .onnx.json URLs</string>
+    <string name="downloading_voice">Downloading custom voice…</string>
 </resources>

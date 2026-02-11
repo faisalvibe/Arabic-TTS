@@ -1,11 +1,9 @@
 package com.arabictts.app
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.arabictts.app.databinding.ActivityMainBinding
@@ -19,29 +17,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var modelManager: ModelManager
     private val ttsEngine = TTSEngine()
     private var isSpeaking = false
-    private var pendingOnnxUri: Uri? = null
-
-    // Step 1: Pick the .onnx model file
-    private val pickOnnxFile = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            pendingOnnxUri = uri
-            Toast.makeText(this, getString(R.string.pick_config_file), Toast.LENGTH_LONG).show()
-            pickConfigFile.launch(arrayOf("application/json", "application/octet-stream", "*/*"))
-        }
-    }
-
-    // Step 2: Pick the .onnx.json config file
-    private val pickConfigFile = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        val onnxUri = pendingOnnxUri
-        if (uri != null && onnxUri != null) {
-            importCustomVoice(onnxUri, uri)
-        }
-        pendingOnnxUri = null
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,10 +79,15 @@ class MainActivity : AppCompatActivity() {
             binding.etInput.setText("مرحباً Hello كيف حالك How are you")
         }
 
-        // Custom voice buttons
+        // Custom voice: download from URLs
         binding.btnImportVoice.setOnClickListener {
-            Toast.makeText(this, getString(R.string.pick_onnx_file), Toast.LENGTH_LONG).show()
-            pickOnnxFile.launch(arrayOf("application/octet-stream", "*/*"))
+            val onnxUrl = binding.etOnnxUrl.text.toString().trim()
+            val configUrl = binding.etConfigUrl.text.toString().trim()
+            if (onnxUrl.isEmpty() || configUrl.isEmpty()) {
+                Toast.makeText(this, getString(R.string.error_empty_urls), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            downloadCustomVoice(onnxUrl, configUrl)
         }
 
         binding.btnRemoveVoice.setOnClickListener {
@@ -231,24 +211,30 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun importCustomVoice(onnxUri: Uri, configUri: Uri) {
-        binding.tvStatus.text = "Importing custom voice..."
+    private fun downloadCustomVoice(onnxUrl: String, configUrl: String) {
+        binding.tvStatus.text = getString(R.string.downloading_voice)
         binding.btnImportVoice.isEnabled = false
 
         lifecycleScope.launch {
-            val result = modelManager.importCustomEnglishModel(onnxUri, configUri)
+            val result = modelManager.importCustomEnglishModelFromUrls(onnxUrl, configUrl) { status ->
+                launch(Dispatchers.Main) {
+                    binding.tvStatus.text = status
+                }
+            }
             withContext(Dispatchers.Main) {
                 binding.btnImportVoice.isEnabled = true
                 if (result.isSuccess) {
-                    binding.tvStatus.text = "Custom voice imported! Reinitializing..."
+                    binding.tvStatus.text = "Custom voice downloaded! Reinitializing..."
+                    binding.etOnnxUrl.text?.clear()
+                    binding.etConfigUrl.text?.clear()
                     updateCustomVoiceStatus()
                     reinitEnglishTTS()
                 } else {
                     val error = result.exceptionOrNull()?.message ?: "Unknown error"
-                    binding.tvStatus.text = "Import failed: $error"
+                    binding.tvStatus.text = "Download failed: $error"
                     Toast.makeText(
                         this@MainActivity,
-                        "Import failed: $error",
+                        "Download failed: $error",
                         Toast.LENGTH_LONG
                     ).show()
                 }

@@ -158,6 +158,53 @@ class ModelManager(private val context: Context) {
     }
 
     /**
+     * Downloads a custom English voice from URLs and imports it.
+     */
+    suspend fun importCustomEnglishModelFromUrls(
+        onnxUrl: String,
+        configUrl: String,
+        onProgress: (String) -> Unit = {}
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            modelsDir.mkdirs()
+
+            val modelFile = File(modelsDir, CUSTOM_EN_MODEL)
+            val configFile = File(modelsDir, CUSTOM_EN_CONFIG)
+            val tokensFile = File(modelsDir, CUSTOM_EN_TOKENS)
+
+            removeCustomEnglishModelFiles()
+
+            onProgress("Downloading .onnx model...")
+            downloadFile(onnxUrl, modelFile, "Custom voice model") { _, _ -> }
+
+            onProgress("Downloading .onnx.json config...")
+            downloadFile(configUrl, configFile, "Custom voice config") { _, _ -> }
+
+            // Validate config
+            val json = JSONObject(configFile.readText())
+            if (!json.has("phoneme_id_map")) {
+                removeCustomEnglishModelFiles()
+                throw Exception("Config JSON missing 'phoneme_id_map' field")
+            }
+            if (!json.has("audio") || !json.getJSONObject("audio").has("sample_rate")) {
+                removeCustomEnglishModelFiles()
+                throw Exception("Config JSON missing 'audio.sample_rate' field")
+            }
+
+            onProgress("Processing voice files...")
+            generateTokensFile(configFile, tokensFile)
+            injectOnnxMetadata(modelFile, configFile)
+
+            Log.i(TAG, "Custom English model downloaded from URL: ${modelFile.length()} bytes")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to download custom English model from URL", e)
+            removeCustomEnglishModelFiles()
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Removes the custom English voice model files, reverting to the default Amy voice.
      */
     fun removeCustomEnglishModelFiles() {
